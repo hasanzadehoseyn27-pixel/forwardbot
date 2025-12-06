@@ -46,7 +46,7 @@ def dests_keyboard():
         resize_keyboard=True
     )
 
-# دو حالت انتظار برای افزودن و حذف
+# حالت انتظار افزودن و حذف
 ADD_DEST_WAIT = set()
 DEL_DEST_WAIT = set()
 
@@ -67,23 +67,21 @@ async def menu_dest(message: types.Message):
     return await message.answer(
         "📍 <b>مدیریت مقصدها</b>\n\n"
         "➕ افزودن مقصد → آیدی یا لینک گروه را ارسال کنید\n"
-        "🗑 حذف مقصد → فقط chat_id را ارسال کنید\n"
-        "📋 لیست مقصدها → نمایش همه گروه‌های مقصد\n",
+        "🗑 حذف مقصد → فقط chat_id را بفرست\n"
+        "📋 لیست مقصدها → نمایش همه مقصدها\n",
         parse_mode="HTML",
         reply_markup=dests_keyboard()
     )
 
 # =====================================================
-#   ➕ افزودن مقصد (بدون فوروارد)
+#   ➕ افزودن مقصد
 # =====================================================
 def extract_chat(text: str):
     text = text.strip()
 
-    # chat_id مستقیم
     if text.startswith("-100") and text[1:].isdigit():
         return int(text), None
 
-    # username / لینک
     if "t.me/" in text:
         username = text.split("t.me/")[1]
         username = username.replace("https://", "").replace("http://", "")
@@ -92,15 +90,17 @@ def extract_chat(text: str):
 
     return None, None
 
+
 @router.message(F.text.contains("افزودن مقصد"))
 async def ask_add_dest(message: types.Message):
     ADD_DEST_WAIT.add(message.from_user.id)
     return await message.answer(
-        "لطفاً chat_id یا لینک گروه را ارسال کنید:\n\n"
+        "chat_id یا لینک گروه را ارسال کنید:\n"
         "<code>-1001234567890</code>\n"
         "<code>t.me/groupname</code>",
         parse_mode="HTML"
     )
+
 
 @router.message(F.text, F.from_user.id.func(lambda uid: uid in ADD_DEST_WAIT))
 async def handle_add_dest(message: types.Message):
@@ -110,20 +110,32 @@ async def handle_add_dest(message: types.Message):
 
     chat_id, username = extract_chat(raw)
 
-    # حالت chat_id مستقیم
+    # ================================
+    # chat_id مستقیم → گرفتن نام گروه
+    # ================================
     if chat_id:
-        ok = add_destination(chat_id, "")
+        try:
+            chat = await message.bot.get_chat(chat_id)
+            title = chat.title or getattr(chat, "full_name", "") or "گروه"
+        except:
+            title = "گروه"
+
+        ok = add_destination(chat_id, title)
+
         return await message.answer(
-            "✅ مقصد اضافه شد." if ok else "ℹ️ این مقصد قبلاً وجود داشت.",
+            f"✅ مقصد اضافه شد:\n<code>{chat_id}</code> — {title}",
+            parse_mode="HTML",
             reply_markup=dests_keyboard()
         )
 
-    # حالت username
+    # ================================
+    # لینک یا username
+    # ================================
     if username:
         try:
             chat = await message.bot.get_chat(username)
             cid = chat.id
-            title = chat.title or getattr(chat, "full_name", "")
+            title = chat.title or getattr(chat, "full_name", "") or "گروه"
             ok = add_destination(cid, title)
 
             return await message.answer(
@@ -151,6 +163,7 @@ async def ask_delete(message: types.Message):
         parse_mode="HTML"
     )
 
+
 @router.message(F.text, F.from_user.id.func(lambda uid: uid in DEL_DEST_WAIT))
 async def del_dest(message: types.Message):
     uid = message.from_user.id
@@ -164,7 +177,7 @@ async def del_dest(message: types.Message):
     ok = remove_destination(cid)
 
     return await message.answer(
-        "🗑 حذف شد." if ok else "❗ مقصدی با این آیدی نبود.",
+        "🗑 حذف شد." if ok else "❗ مقصدی با این آیدی وجود ندارد.",
         reply_markup=dests_keyboard()
     )
 
@@ -175,7 +188,7 @@ async def del_dest(message: types.Message):
 async def list_dest(message: types.Message):
     dests = list_destinations()
     if not dests:
-        return await message.answer("❗ هیچ مقصدی وجود ندارد.", reply_markup=dests_keyboard())
+        return await message.answer("❗ هنوز هیچ مقصدی ثبت نشده است.", reply_markup=dests_keyboard())
 
     txt = "<b>📍 لیست مقصدها</b>\n\n"
     index = 1
@@ -184,13 +197,9 @@ async def list_dest(message: types.Message):
         cid = d["chat_id"]
         title = d.get("title", "") or "گروه"
 
-        # تبدیل chat_id به internal_id
         internal_id = str(cid).replace("-100", "")
-
-        # لینک ورود به گروه
         link = f"https://t.me/c/{internal_id}/1"
 
-        # نمایش نهایی (فقط اسم گروه + کلیک)
         txt += f"{index}/ <a href=\"{link}\">{title}</a>\n"
         index += 1
 
@@ -218,12 +227,13 @@ async def today(message: types.Message):
 @router.message(F.text.contains("فاصله"))
 async def ask_interval(message: types.Message):
     return await message.answer(
-        "⏱ فاصله را بفرست:\n"
+        "⏱ مقدار فاصله را ارسال کنید:\n"
         "<code>5m</code> — ۵ دقیقه\n"
         "<code>2h</code> — ۲ ساعت\n"
         "<code>10</code> — ۱۰ دقیقه",
         parse_mode="HTML"
     )
+
 
 @router.message(F.text.regexp(r"^\d+[mh]?$"))
 async def set_int(message: types.Message):
