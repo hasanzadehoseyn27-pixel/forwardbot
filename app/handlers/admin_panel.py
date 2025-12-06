@@ -205,7 +205,7 @@ async def list_dest(message: types.Message):
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
 # =====================================================
-#   📋 پست‌های امروز (با لینک + شماره آگهی)
+#   📋 پست‌های امروز (گرفتن متن پست با Forward Trick)
 # =====================================================
 import re
 
@@ -227,34 +227,43 @@ async def today(message: types.Message):
 
     txt = "<b>📋 پست‌های امروز</b>\n\n"
 
-    # internal chat id برای ساخت لینک پست
+    # internal chat id برای ساخت لینک به پست اصلی
     internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
 
     for p in posts:
         msg_id = p["message_id"]
 
-        # گرفتن پیام واقعی از کانال مبدا (Aiogram 3 صحیح!)
+        # -------- Forward Trick -------- #
         try:
-            post = await message.bot.get_message(SETTINGS.SOURCE_CHANNEL_ID, msg_id)
-            caption = (post.caption or post.text or "").strip()
+            fwd = await message.bot.forward_message(
+                chat_id=message.chat.id,
+                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
+                message_id=msg_id
+            )
+
+            caption = fwd.caption or fwd.text or ""
+
+            # حذف پیام فوروارد شده
+            await fwd.delete()
+
         except:
             caption = ""
 
-        # استخراج شماره آگهی از متن
+        # استخراج شماره آگهی
         ad_no = extract_ad_number(caption)
 
-        # اگر شماره پیدا شد
         if ad_no:
             label = f"آگهی شماره #{ad_no}"
         else:
             label = f"پیام {msg_id}"
 
-        # ساخت لینک مستقیم به پست ← ۱۰۰٪ قابل کلیک
+        # لینک به پست اصلی
         link = f"https://t.me/c/{internal_id}/{msg_id}"
 
         txt += f"🔖 <a href=\"{link}\">{label}</a>\n"
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=admin_keyboard())
+
 
 # =====================================================
 #   ⏱ تنظیم فاصله

@@ -204,7 +204,6 @@ async def list_dest(message: types.Message):
         index += 1
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
-
 # =====================================================
 #   📋 پست‌های امروز (با لینک + شماره آگهی)
 # =====================================================
@@ -228,16 +227,16 @@ async def today(message: types.Message):
 
     txt = "<b>📋 پست‌های امروز</b>\n\n"
 
-    # internal chat id برای لینک مستقیم به پست
+    # internal chat id برای ساخت لینک پست
     internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
 
     for p in posts:
         msg_id = p["message_id"]
 
-        # گرفتن متن پست از کانال
+        # گرفتن پیام واقعی از کانال مبدا (Aiogram 3 صحیح!)
         try:
-            post = await message.bot.get_chat_message(SETTINGS.SOURCE_CHANNEL_ID, msg_id)
-            caption = post.caption or post.text or ""
+            post = await message.bot.get_message(SETTINGS.SOURCE_CHANNEL_ID, msg_id)
+            caption = (post.caption or post.text or "").strip()
         except:
             caption = ""
 
@@ -250,14 +249,12 @@ async def today(message: types.Message):
         else:
             label = f"پیام {msg_id}"
 
-        # ساخت لینک به پست در کانال
+        # ساخت لینک مستقیم به پست ← ۱۰۰٪ قابل کلیک
         link = f"https://t.me/c/{internal_id}/{msg_id}"
 
         txt += f"🔖 <a href=\"{link}\">{label}</a>\n"
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=admin_keyboard())
-
-
 
 # =====================================================
 #   ⏱ تنظیم فاصله
