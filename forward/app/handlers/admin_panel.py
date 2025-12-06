@@ -7,72 +7,79 @@ from app.storage.dests import (
     remove_destination,
     list_destinations,
 )
-
+from app.storage.admins import (
+    add_admin,
+    remove_admin,
+    list_admins,
+    is_admin as admin_check,
+)
 from app.storage.posts import (
     list_today_posts,
     set_post_active
 )
-
 from app.handlers.scheduler import set_interval
 
 router = Router()
 
 
-# ---------------------- چک ادمین ---------------------- #
+# ---------------------- زیرساخت ---------------------- #
 
-def is_admin(user_id: int) -> bool:
-    return user_id == SETTINGS.OWNER_ID or user_id in SETTINGS.ADMIN_IDS
+def is_admin(uid: int) -> bool:
+    return admin_check(uid)
 
 
-# ---------------------- منوی ادمین ---------------------- #
+# ---------------------- پنل اصلی ---------------------- #
+
+def admin_main_menu():
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="📍 مدیریت مقصدها", callback_data="menu_dests")],
+            [types.InlineKeyboardButton(text="👤 مدیریت ادمین‌ها", callback_data="menu_admins")],
+            [types.InlineKeyboardButton(text="⏱ تنظیم فاصله زمانی", callback_data="menu_interval")],
+            [types.InlineKeyboardButton(text="📋 پست‌های امروز", callback_data="menu_posts")],
+            [types.InlineKeyboardButton(text="🔚 خروج", callback_data="menu_exit")],
+        ]
+    )
+
 
 @router.message(Command("admin"))
 async def admin_menu(message: types.Message):
     if not is_admin(message.from_user.id):
         return await message.answer("⛔ شما ادمین نیستید.")
-
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="➕ افزودن مقصد")],
-            [types.KeyboardButton(text="🗑 حذف مقصد")],
-            [types.KeyboardButton(text="📋 لیست مقصدها")],
-            [types.KeyboardButton(text="📋 پست‌های امروز")],
-            [types.KeyboardButton(text="⏱ تنظیم فاصله")],
-            [types.KeyboardButton(text="🔙 خروج")],
-        ],
-        resize_keyboard=True
+    await message.answer(
+        "🔧 **پنل مدیریت ربات**",
+        reply_markup=admin_main_menu(),
+        parse_mode="Markdown"
     )
 
-    await message.answer("پنل مدیریت:", reply_markup=kb)
+
+# ---------------------- زیرمنو مقصدها ---------------------- #
+
+def menu_dests():
+    return types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(text="➕ افزودن مقصد", callback_data="dests_add")],
+            [types.InlineKeyboardButton(text="🗑 حذف مقصد", callback_data="dests_remove")],
+            [types.InlineKeyboardButton(text="📋 لیست مقصدها", callback_data="dests_list")],
+            [types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="back_main")],
+        ]
+    )
 
 
-# ---------------------- لیست مقصدها ---------------------- #
-
-@router.message(F.text == "📋 لیست مقصدها")
-async def admin_list(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return await message.answer("⛔ دسترسی ندارید.")
-
-    dests = list_destinations()
-    if not dests:
-        return await message.answer("❗ هیچ مقصدی ثبت نشده است.")
-
-    lines = ["📍 مقصدهای ثبت‌شده:\n"]
-    for d in dests:
-        lines.append(f"- {d['chat_id']} — {d.get('title','')}")
-    await message.answer("\n".join(lines))
+@router.callback_query(F.data == "menu_dests")
+async def open_dest_menu(call: types.CallbackQuery):
+    await call.message.edit_text("📍 مدیریت مقصدها", reply_markup=menu_dests())
 
 
-# ---------------------- افزودن مقصد ---------------------- #
+# --- افزودن مقصد --- #
 
-@router.message(F.text == "➕ افزودن مقصد")
-async def start_add_dest(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return await message.answer("⛔ دسترسی ندارید.")
-
-    await message.answer(
-        "لطفاً یک پیام از کانال/گروه مقصد را برای من *فوروارد* کنید.\n"
-        "ربات به صورت خودکار chat_id مقصد را تشخیص می‌دهد."
+@router.callback_query(F.data == "dests_add")
+async def dests_add_prompt(call: types.CallbackQuery):
+    await call.message.edit_text(
+        "➕ یک پیام از مقصد *فوروارد* کنید.\n"
+        "ربات chat_id را تشخیص می‌دهد.",
+        parse_mode="Markdown",
+        reply_markup=menu_dests()
     )
 
 
@@ -80,172 +87,193 @@ async def start_add_dest(message: types.Message):
 async def add_dest_from_forward(message: types.Message):
     if not is_admin(message.from_user.id):
         return
-
     chat = message.forward_from_chat
-    chat_id = chat.id
-    title = chat.title or chat.full_name or ""
-
-    ok = add_destination(chat_id, title)
-
+    ok = add_destination(chat.id, chat.title or chat.full_name or "")
     if ok:
-        await message.answer(f"✅ مقصد اضافه شد:\n{chat_id} — {title}")
+        await message.answer(f"✅ مقصد اضافه شد:\n{chat.id} — {chat.title}")
     else:
-        await message.answer("ℹ️ این مقصد قبلاً ثبت شده بود.")
+        await message.answer("ℹ️ این مقصد قبلاً ثبت شده است.")
 
 
-# ---------------------- حذف مقصد ---------------------- #
+# --- حذف مقصد --- #
 
-@router.message(F.text == "🗑 حذف مقصد")
-async def prompt_delete_dest(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return await message.answer("⛔ دسترسی ندارید.")
-
-    await message.answer(
-        "آیدی مقصد موردنظر را وارد کنید.\n"
-        "مثال: -1001234567890"
+@router.callback_query(F.data == "dests_remove")
+async def dests_remove_prompt(call: types.CallbackQuery):
+    await call.message.edit_text(
+        "🗑 آیدی مقصد را ارسال کنید:",
+        reply_markup=menu_dests()
     )
 
 
 @router.message(F.text.regexp(r"^-?\d+$"))
-async def delete_dest(message: types.Message):
+async def remove_dest(message: types.Message):
     if not is_admin(message.from_user.id):
         return
-
     chat_id = int(message.text)
     ok = remove_destination(chat_id)
-
-    if ok:
-        await message.answer("🗑 مقصد حذف شد.")
-    else:
-        await message.answer("❗ مقصد یافت نشد.")
+    await message.answer("🗑 حذف شد." if ok else "❗ مقصد یافت نشد.")
 
 
-# ---------------------- پست‌های امروز ---------------------- #
+# --- لیست مقصدها --- #
 
-@router.message(F.text == "📋 پست‌های امروز")
-async def show_today_posts(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return await message.answer("⛔ دسترسی ندارید.")
-
-    posts = list_today_posts()
-    if not posts:
-        return await message.answer("📭 امروز هیچ پستی دریافت نشده است.")
-
-    text = "📋 **پست‌های امروز:**\n\n"
-    for p in posts:
-        status = "🔔 فعال" if p["active"] else "❌ غیرفعال"
-        text += f"● ID: `{p['message_id']}` → {status}\n"
-
-    await message.answer(text, parse_mode="Markdown")
-
-    # ارسال دکمه برای هر پست
-    for p in posts:
-        msg_id = p["message_id"]
-        state = p["active"]
-
-        kb = types.InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    types.InlineKeyboardButton(
-                        text="❌ غیرفعال کن" if state else "🔔 فعال کن",
-                        callback_data=f"toggle_admin:{msg_id}"
-                    )
-                ]
-            ]
-        )
-
-        await message.answer(f"پست `{msg_id}`", reply_markup=kb, parse_mode="Markdown")
+@router.callback_query(F.data == "dests_list")
+async def dests_list(call: types.CallbackQuery):
+    dests = list_destinations()
+    if not dests:
+        await call.message.edit_text("❗ هیچ مقصدی ثبت نشده.")
+        return
+    text = "📍 **مقصدها:**\n\n"
+    for d in dests:
+        text += f"- `{d['chat_id']}` — {d.get('title','')}\n"
+    await call.message.edit_text(text, reply_markup=menu_dests(), parse_mode="Markdown")
 
 
-# ---------------------- تغییر وضعیت پست از پنل ادمین ---------------------- #
+# ---------------------- مدیریت ادمین‌ها ---------------------- #
 
-@router.callback_query(F.data.startswith("toggle_admin:"))
-async def toggle_from_admin(call: types.CallbackQuery):
-    if not is_admin(call.from_user.id):
-        return await call.answer("⛔ دسترسی ندارید.", show_alert=True)
-
-    msg_id = int(call.data.split(":")[1])
-    posts = list_today_posts()
-
-    found = None
-    for p in posts:
-        if p["message_id"] == msg_id:
-            found = p
-            break
-
-    if not found:
-        return await call.answer("❗ پست یافت نشد.", show_alert=True)
-
-    new_state = not found["active"]
-    set_post_active(msg_id, new_state)
-
-    await call.answer(
-        "🔔 پست فعال شد." if new_state else "❌ پست غیرفعال شد."
-    )
-
-    # بروزرسانی دکمه
-    kb = types.InlineKeyboardMarkup(
+def admins_menu():
+    return types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                types.InlineKeyboardButton(
-                    text="❌ غیرفعال کن" if new_state else "🔔 فعال کن",
-                    callback_data=f"toggle_admin:{msg_id}"
-                )
-            ]
+            [types.InlineKeyboardButton(text="➕ افزودن ادمین", callback_data="adm_add")],
+            [types.InlineKeyboardButton(text="🗑 حذف ادمین", callback_data="adm_del")],
+            [types.InlineKeyboardButton(text="📋 لیست ادمین‌ها", callback_data="adm_list")],
+            [types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="back_main")],
         ]
     )
 
-    try:
-        await call.message.edit_reply_markup(reply_markup=kb)
-    except:
-        pass
+
+@router.callback_query(F.data == "menu_admins")
+async def open_admins(call: types.CallbackQuery):
+    await call.message.edit_text("👤 مدیریت ادمین‌ها", reply_markup=admins_menu())
 
 
-# ---------------------- تنظیم فاصله زمانی ---------------------- #
+# --- روش افزودن ادمین --- #
 
-@router.message(F.text == "⏱ تنظیم فاصله")
-async def set_interval_prompt(message: types.Message):
+@router.callback_query(F.data == "adm_add")
+async def adm_add_prompt(call: types.CallbackQuery):
+    await call.message.edit_text(
+        "➕ یکی از روش‌ها:\n"
+        "- فوروارد پیام کاربر\n"
+        "- @username\n"
+        "- لینک t.me\n"
+        "- chat_id عددی",
+        reply_markup=admins_menu()
+    )
+
+
+@router.message(F.forward_from)
+async def adm_add_from_forward(message: types.Message):
     if not is_admin(message.from_user.id):
-        return await message.answer("⛔ شما ادمین نیستید.")
+        return
+    uid = message.forward_from.id
+    ok = add_admin(uid)
+    await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً ادمین بود.")
 
-    await message.answer(
-        "**فاصله زمانی ارسال خودکار را وارد کنید:**\n\n"
-        "- `5m`  → ۵ دقیقه\n"
-        "- `30m` → ۳۰ دقیقه\n"
-        "- `2h`  → ۲ ساعت\n"
-        "- `10`  → ۱۰ دقیقه\n\n"
-        "از ۱ دقیقه تا هرچقدر بخواهید پشتیبانی می‌شود.",
-        parse_mode="Markdown"
+
+@router.message(F.text.regexp(r"@([A-Za-z0-9_]{5,})"))
+async def adm_add_from_username(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    username = message.text.replace("@", "")
+    try:
+        chat = await message.bot.get_chat(username)
+        uid = chat.id
+        ok = add_admin(uid)
+        await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً ادمین بود.")
+    except:
+        await message.answer("❗ کاربر یافت نشد.")
+
+
+@router.message(F.text.regexp(r"^-?\d+$"))
+async def adm_add_from_id(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    uid = int(message.text)
+    ok = add_admin(uid)
+    await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً ادمین بود.")
+
+
+# --- حذف ادمین --- #
+
+@router.callback_query(F.data == "adm_del")
+async def adm_del_prompt(call: types.CallbackQuery):
+    await call.message.edit_text("🗑 chat_id ادمین را ارسال کنید:", reply_markup=admins_menu())
+
+
+@router.message(F.text.regexp(r"^-?\d+$"))
+async def adm_del_id(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    uid = int(message.text)
+    ok = remove_admin(uid)
+    await message.answer("🗑 حذف شد." if ok else "❗ یافت نشد یا حذف‌نشدنی.")
+
+
+# --- لیست ادمین‌ها --- #
+
+@router.callback_query(F.data == "adm_list")
+async def adm_list(call: types.CallbackQuery):
+    admins = list_admins()
+    text = "👤 **ادمین‌ها:**\n\n"
+    for a in admins:
+        text += f"- `{a}`\n"
+    await call.message.edit_text(text, reply_markup=admins_menu(), parse_mode="Markdown")
+
+
+# ---------------------- تنظیم فاصله ---------------------- #
+
+@router.callback_query(F.data == "menu_interval")
+async def interval_menu(call: types.CallbackQuery):
+    await call.message.edit_text(
+        "⏱ مقدار فاصله را ارسال کنید:\nمثال:\n`5m`, `30m`, `2h`, `10`",
+        parse_mode="Markdown",
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[[types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="back_main")]]
+        )
     )
 
 
 @router.message(F.text.regexp(r"^\d+[mh]?$"))
 async def set_interval_value(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    raw = message.text.strip().lower()
-
+    raw = message.text.lower()
     if raw.isdigit():
         seconds = int(raw) * 60
-
     elif raw.endswith("m"):
-        minutes = int(raw[:-1])
-        seconds = minutes * 60
-
+        seconds = int(raw[:-1]) * 60
     elif raw.endswith("h"):
-        hours = int(raw[:-1])
-        seconds = hours * 3600
-
+        seconds = int(raw[:-1]) * 3600
     else:
-        return await message.answer("❗ فرمت صحیح نیست.")
-
+        return await message.answer("❗ فرمت اشتباه است.")
     await set_interval(seconds)
-    await message.answer(f"⏱ فاصله زمانی تنظیم شد: {seconds} ثانیه")
+    await message.answer(f"⏱ فاصله تنظیم شد: {seconds} ثانیه")
+
+
+# ---------------------- پست‌های امروز ---------------------- #
+
+@router.callback_query(F.data == "menu_posts")
+async def posts_menu(call: types.CallbackQuery):
+    posts = list_today_posts()
+    if not posts:
+        return await call.message.edit_text("📭 امروز هیچ پستی ثبت نشده.", reply_markup=admin_main_menu())
+
+    lines = "📋 **پست‌های امروز:**\n\n"
+    for p in posts:
+        status = "🔔 فعال" if p["active"] else "❌ غیرفعال"
+        lines += f"- ID `{p['message_id']}` → {status}\n"
+
+    await call.message.edit_text(lines, parse_mode="Markdown", reply_markup=admin_main_menu())
+
+
+# ---------------------- بازگشت ---------------------- #
+
+@router.callback_query(F.data == "back_main")
+async def back_main(call: types.CallbackQuery):
+    await call.message.edit_text("🔧 **پنل مدیریت ربات**",
+                                 reply_markup=admin_main_menu(),
+                                 parse_mode="Markdown")
 
 
 # ---------------------- خروج ---------------------- #
 
-@router.message(F.text == "🔙 خروج")
-async def exit_admin(message: types.Message):
-    await message.answer("خروج از پنل.", reply_markup=types.ReplyKeyboardRemove())
+@router.callback_query(F.data == "menu_exit")
+async def exit_admin(call: types.CallbackQuery):
+    await call.message.edit_text("🔚 پنل بسته شد.")
