@@ -1,4 +1,5 @@
 import asyncio
+
 from aiogram import types, Router
 from aiogram.filters import CommandStart
 
@@ -8,25 +9,23 @@ from app.handlers.source import router as source_router
 from app.handlers.admin_panel import router as admin_router
 from app.handlers.scheduler import start_scheduler
 
-
 router = Router()
 
-
 @router.message(CommandStart())
-async def on_start(message: types.Message):
-    await message.answer("سلام 👋\nربات فعال است.\nبرای مدیریت: /admin")
-
+async def start(message: types.Message):
+    await message.answer("سلام! برای مدیریت ربات بنویسید: /admin")
 
 async def main():
     bot, dp, _ = build_bot_and_dispatcher()
 
-    # ----------------------- بسیار مهم -----------------------
-    # لود کردن OWNER_ID و ADMIN_IDS از .env
+    # ------------------------
+    # 🔥 ثبت ادمین‌ها
+    # ------------------------
     bootstrap_admins(
         owner_id=SETTINGS.OWNER_ID,
         initial_admins=SETTINGS.ADMIN_IDS
     )
-    # ----------------------------------------------------------
+    print("ADMINS LOADED:", SETTINGS.OWNER_ID, SETTINGS.ADMIN_IDS)
 
     dp.include_router(router)
     dp.include_router(source_router)
@@ -34,9 +33,9 @@ async def main():
 
     asyncio.create_task(start_scheduler(bot))
 
-    print("Bot is running…")
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+#شش
