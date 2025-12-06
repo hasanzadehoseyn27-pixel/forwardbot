@@ -188,7 +188,7 @@ async def interval_set(message: types.Message):
     await message.answer(f"⏱ فاصله زمانی روی {seconds} ثانیه تنظیم شد.")
 # ====================================================================
 # 📋 پست‌های امروز
-# ====================================================================
+# ===================================================================
 @router.message(F.text == "📋 پست‌های امروز")
 async def today_posts(message: types.Message):
     if not is_admin(message.from_user.id):
@@ -204,3 +204,4 @@ async def today_posts(message: types.Message):
         text += f"- ID: `{p['message_id']}` → {status}\n"
 
     await message.answer(text, parse_mode="Markdown")
+#شش
