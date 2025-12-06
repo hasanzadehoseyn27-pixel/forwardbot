@@ -57,14 +57,13 @@ def dests_keyboard() -> types.ReplyKeyboardMarkup:
 async def cmd_admin(message: types.Message):
     if not is_admin(message.from_user.id):
         return await message.answer("⛔ شما ادمین نیستید.")
-
     return await message.answer("🔧 پنل مدیریت ربات", reply_markup=admin_keyboard())
 
 
 # ================================================================
 # 📍 مدیریت مقصدها
 # ================================================================
-@router.message(F.text == "📍 مدیریت مقصدها")
+@router.message(F.text.contains("مدیریت مقصد"))
 async def manage_dests(message: types.Message):
     if not is_admin(message.from_user.id):
         return
@@ -74,12 +73,11 @@ async def manage_dests(message: types.Message):
         "➕ افزودن مقصد: آیدی گروه یا لینک گروه را ارسال کنید.\n"
         "نمونه:\n"
         "`-1001234567890`\n"
-        "`t.me/groupname`\n"
-        "`https://t.me/groupname`\n\n"
+        "`t.me/groupname`\n\n"
         "🗑 حذف مقصد: فقط chat_id را بزن.\n"
         "📋 لیست مقصدها: نمایش همه مقصدها\n",
         parse_mode="Markdown",
-        reply_markup=dests_keyboard(),
+        reply_markup=dests_keyboard()
     )
 
 
@@ -87,68 +85,63 @@ async def manage_dests(message: types.Message):
 # ➕ افزودن مقصد (بدون فوروارد)
 # ================================================================
 def extract_chat_id_from_text(text: str):
-    """
-    ورودی ممکن است یکی از این‌ها باشد:
-    - عدد: -1001234567890
-    - لینک: t.me/GroupName
-    - لینک کامل: https://t.me/GroupName
-    خروجی: chat_id یا username
-    """
     text = text.strip()
 
-    # 1️⃣ اگر مستقیم عدد است
+    # اگر مستقیم chat_id است
     if text.startswith("-") and text[1:].isdigit():
         return int(text), None
 
-    # 2️⃣ اگر لینک است
+    # اگر لینک t.me است
     if "t.me/" in text:
-        username = text.split("t.me/")[1].strip()
+        username = text.split("t.me/")[1]
         username = username.replace("https://", "").replace("http://", "")
-        username = username.replace("@", "")
+        username = username.split("/")[0]
         return None, username
 
     return None, None
 
 
-@router.message(F.text == "➕ افزودن مقصد")
-async def add_dest_start(message: types.Message):
+@router.message(F.text.contains("افزودن مقصد"))
+async def add_dest_prompt(message: types.Message):
     return await message.answer(
-        "chat_id یا لینک گروه مقصد را ارسال کنید:\n\n"
+        "chat_id یا لینک گروه را ارسال کنید:\n\n"
         "`-100xxxxxxx`\n"
         "`t.me/groupname`",
         parse_mode="Markdown"
     )
 
 
-@router.message(F.text.regexp(r".+"), ~F.text.in_(["📍 مدیریت مقصدها", "🗑 حذف مقصد", "📋 لیست مقصدها", "🔙 بازگشت", "📋 پست‌های امروز", "⏱ تنظیم فاصله"]))
+@router.message(
+    F.text.regexp(r".+")
+    & ~F.text.contains("حذف مقصد")
+    & ~F.text.contains("لیست مقصدها")
+    & ~F.text.contains("بازگشت")
+    & ~F.text.contains("پست")
+    & ~F.text.contains("فاصله")
+)
 async def add_dest_handler(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
     raw = message.text.strip()
-
     chat_id, username = extract_chat_id_from_text(raw)
 
-    # ───────────────────────────────────────────────
-    # حالت اول: chat_id عددی مستقیماً داده شده
-    # ───────────────────────────────────────────────
+    # حالت chat_id مستقیم
     if chat_id:
         ok = add_destination(chat_id, "")
         return await message.answer(
-            "✅ مقصد اضافه شد." if ok else "ℹ️ این مقصد قبلاً وجود داشت.",
+            "✅ مقصد اضافه شد." if ok else "ℹ️ مقصد از قبل وجود داشت.",
             reply_markup=dests_keyboard()
         )
 
-    # ───────────────────────────────────────────────
-    # حالت دوم: لینک داده شده → باید chat_id از API گرفته شود
-    # ───────────────────────────────────────────────
+    # حالت username
     if username:
         try:
             chat = await message.bot.get_chat(username)
             cid = chat.id
             title = chat.title or getattr(chat, "full_name", "")
-
             ok = add_destination(cid, title)
+
             return await message.answer(
                 f"✅ مقصد اضافه شد:\n`{cid}` — {title}",
                 parse_mode="Markdown",
@@ -166,16 +159,16 @@ async def add_dest_handler(message: types.Message):
 # ================================================================
 # 🗑 حذف مقصد
 # ================================================================
-@router.message(F.text == "🗑 حذف مقصد")
-async def del_dest_prompt(message: types.Message):
-    await message.answer(
+@router.message(F.text.contains("حذف مقصد"))
+async def delete_dest_prompt(message: types.Message):
+    return await message.answer(
         "chat_id مقصد را ارسال کنید:\n`-100xxxxxxxx`",
         parse_mode="Markdown"
     )
 
 
 @router.message(F.text.regexp(r"^-?\d+$"))
-async def del_dest(message: types.Message):
+async def delete_dest(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
@@ -183,7 +176,7 @@ async def del_dest(message: types.Message):
     ok = remove_destination(chat_id)
 
     return await message.answer(
-        "🗑 مقصد حذف شد." if ok else "❗ مقصدی با این آیدی پیدا نشد.",
+        "🗑 مقصد حذف شد." if ok else "❗ مقصدی با این آیدی وجود ندارد.",
         reply_markup=dests_keyboard()
     )
 
@@ -191,7 +184,7 @@ async def del_dest(message: types.Message):
 # ================================================================
 # 📋 لیست مقصدها
 # ================================================================
-@router.message(F.text == "📋 لیست مقصدها")
+@router.message(F.text.contains("لیست مقصد"))
 async def list_destinations_cmd(message: types.Message):
     if not is_admin(message.from_user.id):
         return
@@ -210,17 +203,16 @@ async def list_destinations_cmd(message: types.Message):
 # ================================================================
 # 📋 پست‌های امروز
 # ================================================================
-@router.message(F.text == "📋 پست‌های امروز")
+@router.message(F.text.contains("پست‌های امروز"))
 async def today_posts(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
     posts = list_today_posts()
-
     if not posts:
-        return await message.answer("📭 هیچ پستی ثبت نشده است.", reply_markup=admin_keyboard())
+        return await message.answer("📭 امروز هیچ پستی نیست.", reply_markup=admin_keyboard())
 
-    txt = "📋 پست‌های امروز:\n\n"
+    txt = "📋 امروز:\n\n"
     for p in posts:
         active = "🔔" if p["active"] else "❌"
         txt += f"{active} ID: `{p['message_id']}`\n"
@@ -231,13 +223,13 @@ async def today_posts(message: types.Message):
 # ================================================================
 # ⏱ تنظیم فاصله
 # ================================================================
-@router.message(F.text == "⏱ تنظیم فاصله")
+@router.message(F.text.contains("فاصله"))
 async def interval_prompt(message: types.Message):
-    await message.answer(
-        "⏱ مقدار فاصله را ارسال کن:\n"
+    return await message.answer(
+        "⏱ مقدار فاصله را بفرست:\n"
         "`5m` → پنج دقیقه\n"
         "`2h` → دو ساعت\n"
-        "`10` → ۱۰ دقیقه",
+        "`10` → ده دقیقه",
         parse_mode="Markdown"
     )
 
@@ -253,7 +245,7 @@ async def interval_set(message: types.Message):
     elif raw.endswith("h"):
         seconds = int(raw[:-1]) * 3600
     else:
-        return await message.answer("❗ فرمت درست نیست.")
+        return await message.answer("❗ فرمت صحیح نیست.")
 
     await set_interval(seconds)
 
@@ -261,3 +253,11 @@ async def interval_set(message: types.Message):
         f"⏱ فاصله روی {seconds} ثانیه تنظیم شد.",
         reply_markup=admin_keyboard()
     )
+
+
+# ================================================================
+# 🔙 بازگشت
+# ================================================================
+@router.message(F.text.contains("بازگشت"))
+async def back_main(message: types.Message):
+    return await message.answer("بازگشت به پنل مدیریت:", reply_markup=admin_keyboard())
