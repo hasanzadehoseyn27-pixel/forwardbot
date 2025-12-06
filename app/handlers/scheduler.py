@@ -80,3 +80,4 @@ async def start_scheduler(bot: Bot):
             # جلوگیری از توقف scheduler
             print(f"[SCHEDULER] LOOP ERROR: {e}")
             await asyncio.sleep(5)
+# aa
