@@ -16,9 +16,16 @@ from app.handlers.scheduler import start_scheduler
 
 
 async def main():
-    bot, dp = build_bot_and_dispatcher()
+    # ---- گرفتن bot و dp از تابع کانفیگ ---- #
+    result = build_bot_and_dispatcher()
 
-    # ---- هندلر استارت ---- #
+    # اگر چند مقدار برگرداند، فقط دو تای اول را می‌گیریم
+    if isinstance(result, tuple):
+        bot, dp = result[0], result[1]
+    else:
+        bot, dp = result
+
+    # ---- هندلر /start ---- #
     start_router = Router()
 
     @start_router.message(CommandStart())
@@ -36,10 +43,10 @@ async def main():
     dp.include_router(source_router)
     dp.include_router(admin_router)
 
-    # شروع Scheduler
+    # شروع Scheduler در پس‌زمینه
     asyncio.create_task(start_scheduler(bot))
 
-    # healthcheck ساده HTTP برای سرور
+    # ------ وب‌سرور ساده برای healthcheck ------ #
     async def healthcheck(_):
         return web.Response(text="Bot is running!")
 
@@ -53,6 +60,7 @@ async def main():
 
     print(f"HTTP server started on 0.0.0.0:{port}")
 
+    # شروع polling ربات
     await dp.start_polling(bot)
 
 
