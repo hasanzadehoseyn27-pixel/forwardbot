@@ -1,268 +1,213 @@
 from aiogram import Router, types, F
 from aiogram.filters import Command
 
-from app.config import SETTINGS
-from app.storage.dests import (
-    add_destination,
-    remove_destination,
-    list_destinations,
-)
-
-from app.storage.admins import (
-    add_admin,
-    remove_admin,
-    list_admins,
-    is_admin as admin_check,
-)
-
-from app.storage.posts import (
-    list_today_posts,
-    set_post_active
-)
-
+from app.storage.dests import add_destination, remove_destination, list_destinations
+from app.storage.admins import add_admin, remove_admin, list_admins, is_admin as check_admin
+from app.storage.posts import list_today_posts, set_post_active
 from app.handlers.scheduler import set_interval
-
+from app.config import SETTINGS
 
 router = Router()
 
-
-# ---------------------- ابزار ---------------------- #
+# ------------------ ابزار ------------------ #
 
 def is_admin(uid: int) -> bool:
-    return admin_check(uid)
+    return check_admin(uid)
 
 
-# ---------------------- Reply Keyboard ---------------------- #
+# ------------------ دکمه های پایین صفحه ------------------ #
 
 def admin_keyboard():
     return types.ReplyKeyboardMarkup(
         keyboard=[
-            [types.KeyboardButton(text="📍 مدیریت مقصدها")],
-            [types.KeyboardButton(text="👤 مدیریت ادمین‌ها")],
-            [types.KeyboardButton(text="⏱ تنظیم فاصله")],
-            [types.KeyboardButton(text="📋 پست‌های امروز")],
-            [types.KeyboardButton(text="🔙 خروج")],
+            [
+                types.KeyboardButton(text="📍 مدیریت مقصدها"),
+                types.KeyboardButton(text="👤 مدیریت ادمین‌ها"),
+            ],
+            [
+                types.KeyboardButton(text="⏱ تنظیم فاصله"),
+                types.KeyboardButton(text="📋 پست‌های امروز"),
+            ],
+            [
+                types.KeyboardButton(text="🔙 خروج"),
+            ]
         ],
         resize_keyboard=True
     )
 
 
-# ---------------------- ورود به پنل ---------------------- #
+# ------------------ ورود به پنل ------------------ #
 
 @router.message(Command("admin"))
-async def admin_menu(message: types.Message):
+async def open_admin(message: types.Message):
     if not is_admin(message.from_user.id):
         return await message.answer("⛔ شما ادمین نیستید.")
 
     await message.answer(
-        "🔧 **پنل مدیریت ربات**",
-        reply_markup=admin_keyboard(),
-        parse_mode="Markdown"
+        "🔧 پنل مدیریت ربات فعال شد.",
+        reply_markup=admin_keyboard()
     )
 
 
 # ============================================================
-#  📍 مدیریت مقصدها
+# 📍 مدیریت مقصدها
 # ============================================================
 
 @router.message(F.text == "📍 مدیریت مقصدها")
-async def dests_menu(message: types.Message):
+async def manage_dest(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="➕ افزودن مقصد")],
-            [types.KeyboardButton(text="🗑 حذف مقصد")],
-            [types.KeyboardButton(text="📋 لیست مقصدها")],
-            [types.KeyboardButton(text="🔙 بازگشت")],
-        ],
-        resize_keyboard=True,
+    await message.answer(
+        "➕ برای افزودن مقصد یک پیام از گروه/کانال مقصد فوروارد کنید.\n"
+        "🗑 برای حذف مقصد، chat_id را بفرستید.\n"
+        "📋 برای نمایش مقصدها: «📋 لیست مقصدها»",
+        reply_markup=types.ReplyKeyboardMarkup(
+            keyboard=[
+                [types.KeyboardButton("➕ افزودن مقصد")],
+                [types.KeyboardButton("🗑 حذف مقصد")],
+                [types.KeyboardButton("📋 لیست مقصدها")],
+                [types.KeyboardButton("🔙 بازگشت")],
+            ],
+            resize_keyboard=True
+        )
     )
 
-    await message.answer("📍 مدیریت مقصدها:", reply_markup=kb)
-
-
-# --- افزودن مقصد --- #
 
 @router.message(F.text == "➕ افزودن مقصد")
-async def dest_add_prompt(message: types.Message):
-    await message.answer("یک پیام از مقصد *فوروارد* کنید.")
+async def add_dest_prompt(message: types.Message):
+    await message.answer("یک پیام از مقصد *فوروارد کنید*.")
 
 
 @router.message(F.forward_from_chat)
-async def dest_add_from_forward(message: types.Message):
+async def add_dest(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
     chat = message.forward_from_chat
     ok = add_destination(chat.id, chat.title or chat.full_name or "")
+    await message.answer("✅ اضافه شد." if ok else "ℹ️ قبلاً وجود داشت.")
 
-    await message.answer(
-        "✅ مقصد اضافه شد." if ok else "ℹ️ این مقصد قبلاً وجود دارد.",
-        reply_markup=admin_keyboard()
-    )
-
-
-# --- حذف مقصد --- #
 
 @router.message(F.text == "🗑 حذف مقصد")
-async def dest_remove_prompt(message: types.Message):
-    await message.answer("آیدی مقصد را وارد کنید:")
+async def del_dest_prompt(message: types.Message):
+    await message.answer("chat_id مقصد را ارسال کنید.")
 
 
 @router.message(F.text.regexp(r"^-?\d+$"))
-async def dest_remove(message: types.Message):
+async def del_dest(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
-    chat_id = int(message.text)
-    ok = remove_destination(chat_id)
+    ok = remove_destination(int(message.text))
+    await message.answer("🗑 حذف شد." if ok else "❗ یافت نشد.")
 
-    await message.answer(
-        "🗑 حذف شد." if ok else "❗ یافت نشد.",
-        reply_markup=admin_keyboard()
-    )
-
-
-# --- لیست مقصدها --- #
 
 @router.message(F.text == "📋 لیست مقصدها")
 async def dest_list(message: types.Message):
     dests = list_destinations()
-
     if not dests:
-        return await message.answer("❗ هیچ مقصدی ثبت نشده.", reply_markup=admin_keyboard())
+        return await message.answer("❗ هیچ مقصدی وجود ندارد.")
 
-    text = "📍 **لیست مقصدها:**\n\n"
+    text = "📍 **مقصدها:**\n\n"
     for d in dests:
         text += f"- `{d['chat_id']}` — {d.get('title','')}\n"
 
-    await message.answer(text, parse_mode="Markdown", reply_markup=admin_keyboard())
+    await message.answer(text, parse_mode="Markdown")
 
 
 # ============================================================
-#  👤 مدیریت ادمین‌ها
+# 👤 مدیریت ادمین‌ها
 # ============================================================
 
 @router.message(F.text == "👤 مدیریت ادمین‌ها")
-async def admin_users_menu(message: types.Message):
+async def manage_admin(message: types.Message):
     if not is_admin(message.from_user.id):
         return
 
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="➕ افزودن ادمین")],
-            [types.KeyboardButton(text="🗑 حذف ادمین")],
-            [types.KeyboardButton(text="📋 لیست ادمین‌ها")],
-            [types.KeyboardButton(text="🔙 بازگشت")],
-        ],
-        resize_keyboard=True,
-    )
-
-    await message.answer("👤 مدیریت ادمین‌ها:", reply_markup=kb)
-
-
-# --- افزودن ادمین --- #
-
-@router.message(F.text == "➕ افزودن ادمین")
-async def admin_add_prompt(message: types.Message):
     await message.answer(
         "روش‌های افزودن ادمین:\n"
         "1️⃣ فوروارد پیام کاربر\n"
         "2️⃣ ارسال @username\n"
-        "3️⃣ ارسال لینک t.me\n"
-        "4️⃣ ارسال chat_id عددی",
-        parse_mode="Markdown"
+        "3️⃣ chat_id عددی\n\n"
+        "برای حذف نیز chat_id را بفرستید.",
+        reply_markup=types.ReplyKeyboardMarkup(
+            keyboard=[
+                [types.KeyboardButton("➕ افزودن ادمین")],
+                [types.KeyboardButton("🗑 حذف ادمین")],
+                [types.KeyboardButton("📋 لیست ادمین‌ها")],
+                [types.KeyboardButton("🔙 بازگشت")],
+            ],
+            resize_keyboard=True
+        )
     )
 
 
-# فوروارد
-@router.message(F.forward_from)
-async def admin_add_from_forward(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return
+@router.message(F.text == "➕ افزودن ادمین")
+async def add_admin_prompt(message: types.Message):
+    await message.answer("یک پیام فوروارد کنید یا @username یا chat_id ارسال کنید.")
 
+
+@router.message(F.forward_from)
+async def add_admin_forward(message: types.Message):
     uid = message.forward_from.id
     ok = add_admin(uid)
-    await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً ادمین بود.", reply_markup=admin_keyboard())
+    await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً وجود داشت.")
 
 
-# username
 @router.message(F.text.regexp(r"@([A-Za-z0-9_]{5,})"))
-async def admin_add_from_username(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    username = message.text.replace("@", "")
-
+async def add_admin_username(message: types.Message):
     try:
+        username = message.text.replace("@", "")
         chat = await message.bot.get_chat(username)
         uid = chat.id
         ok = add_admin(uid)
-        await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً بود.", reply_markup=admin_keyboard())
+        await message.answer("✅ افزوده شد." if ok else "ℹ️ از قبل وجود داشت.")
     except:
-        await message.answer("❗ کاربر یافت نشد.", reply_markup=admin_keyboard())
+        await message.answer("❗ کاربر یافت نشد.")
 
 
-# chat_id
 @router.message(F.text.regexp(r"^-?\d+$"))
-async def admin_add_from_id(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return
-
+async def add_admin_id(message: types.Message):
     uid = int(message.text)
     ok = add_admin(uid)
-    await message.answer("✅ افزوده شد." if ok else "ℹ️ قبلاً بود.", reply_markup=admin_keyboard())
+    await message.answer("✅ افزوده شد." if ok else "ℹ️ از قبل وجود داشت.")
 
-
-# --- حذف ادمین --- #
 
 @router.message(F.text == "🗑 حذف ادمین")
-async def admin_del_prompt(message: types.Message):
-    await message.answer("chat_id ادمین را ارسال کنید:")
+async def del_admin_prompt(message: types.Message):
+    await message.answer("chat_id ادمین را ارسال کنید.")
 
 
 @router.message(F.text.regexp(r"^-?\d+$"))
-async def admin_del(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return
-
+async def del_admin(message: types.Message):
     uid = int(message.text)
     ok = remove_admin(uid)
-    await message.answer(
-        "🗑 حذف شد." if ok else "❗ یافت نشد / Owner حذف نمی‌شود.",
-        reply_markup=admin_keyboard()
-    )
+    await message.answer("🗑 حذف شد." if ok else "❗ یافت نشد / Owner حذف نمی‌شود.")
 
-
-# --- لیست ادمین‌ها --- #
 
 @router.message(F.text == "📋 لیست ادمین‌ها")
-async def admin_list_all(message: types.Message):
+async def list_admin_list(message: types.Message):
     admins = list_admins()
-    text = "👤 **ادمین‌ها:**\n\n"
-    for a in admins:
-        text += f"- `{a}`\n"
 
-    await message.answer(text, parse_mode="Markdown", reply_markup=admin_keyboard())
+    text = "👤 **ادمین‌ها:**\n"
+    for uid in admins:
+        text += f"- `{uid}`\n"
+
+    await message.answer(text, parse_mode="Markdown")
 
 
 # ============================================================
-#  ⏱ تنظیم فاصله زمانی
+# ⏱ فاصله زمانی
 # ============================================================
 
 @router.message(F.text == "⏱ تنظیم فاصله")
 async def interval_prompt(message: types.Message):
-    await message.answer(
-        "⏱ فاصله را وارد کنید:\n"
-        "`5m` , `30m` , `2h` , `10`",
-        parse_mode="Markdown"
-    )
+    await message.answer("⏱ مقدار فاصله را وارد کنید (مثال: `5m`, `2h`, `10`)", parse_mode="Markdown")
 
 
 @router.message(F.text.regexp(r"^\d+[mh]?$"))
-async def interval_set(message: types.Message):
+async def interval_set_value(message: types.Message):
     raw = message.text.lower()
 
     if raw.isdigit():
@@ -272,35 +217,34 @@ async def interval_set(message: types.Message):
     elif raw.endswith("h"):
         seconds = int(raw[:-1]) * 3600
     else:
-        return await message.answer("❗ فرمت اشتباه.")
+        return await message.answer("❗فرمت اشتباه.")
 
     await set_interval(seconds)
-    await message.answer(f"⏱ فاصله تنظیم شد: {seconds} ثانیه", reply_markup=admin_keyboard())
+    await message.answer(f"⏱ فاصله تنظیم شد: {seconds} ثانیه")
 
 
 # ============================================================
-#  📋 پست‌های امروز
+# 📋 پست‌های امروز
 # ============================================================
 
 @router.message(F.text == "📋 پست‌های امروز")
-async def posts_today(message: types.Message):
+async def today_posts(message: types.Message):
     posts = list_today_posts()
-
     if not posts:
-        return await message.answer("📭 هیچ پستی ثبت نشده.", reply_markup=admin_keyboard())
+        return await message.answer("📭 هیچ پستی نیست.")
 
-    text = "📋 **پست‌های امروز:**\n\n"
+    text = "📋 **پست‌های امروز:**\n"
     for p in posts:
         status = "🔔 فعال" if p["active"] else "❌ غیرفعال"
-        text += f"- ID `{p['message_id']}` → {status}\n"
+        text += f"- `{p['message_id']}` → {status}\n"
 
-    await message.answer(text, parse_mode="Markdown", reply_markup=admin_keyboard())
+    await message.answer(text, parse_mode="Markdown")
 
 
 # ============================================================
-#  🔙 بازگشت
+# 🔙 بازگشت
 # ============================================================
 
 @router.message(F.text == "🔙 بازگشت")
-async def back_to_main(message: types.Message):
-    await message.answer("🔧 پنل مدیریت ربات", reply_markup=admin_keyboard())
+async def back_main(message: types.Message):
+    await message.answer("🔧 بازگشت به منوی اصلی", reply_markup=admin_keyboard())
