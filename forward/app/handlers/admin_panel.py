@@ -206,7 +206,7 @@ async def list_dest(message: types.Message):
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
 
 # =====================================================
-#   📋 پست‌های امروز (استخراج شماره آگهی از متن)
+#   📋 پست‌های امروز (با لینک + شماره آگهی)
 # =====================================================
 import re
 
@@ -221,30 +221,42 @@ def extract_ad_number(text: str):
 
 @router.message(F.text.contains("پست‌های امروز"))
 async def today(message: types.Message):
+
     posts = list_today_posts()
     if not posts:
         return await message.answer("📭 امروز هیچ پستی نیست.", reply_markup=admin_keyboard())
 
     txt = "<b>📋 پست‌های امروز</b>\n\n"
 
+    # internal chat id برای لینک مستقیم به پست
+    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
+
     for p in posts:
         msg_id = p["message_id"]
 
+        # گرفتن متن پست از کانال
         try:
-            # گرفتن متن واقعی پیام از کانال مبدا
             post = await message.bot.get_chat_message(SETTINGS.SOURCE_CHANNEL_ID, msg_id)
             caption = post.caption or post.text or ""
         except:
             caption = ""
 
+        # استخراج شماره آگهی از متن
         ad_no = extract_ad_number(caption)
 
+        # اگر شماره پیدا شد
         if ad_no:
-            txt += f"🔖 آگهی شماره #{ad_no}\n"
+            label = f"آگهی شماره #{ad_no}"
         else:
-            txt += f"🔖 پیام {msg_id}\n"
+            label = f"پیام {msg_id}"
+
+        # ساخت لینک به پست در کانال
+        link = f"https://t.me/c/{internal_id}/{msg_id}"
+
+        txt += f"🔖 <a href=\"{link}\">{label}</a>\n"
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=admin_keyboard())
+
 
 
 # =====================================================
