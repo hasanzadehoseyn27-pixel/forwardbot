@@ -206,20 +206,46 @@ async def list_dest(message: types.Message):
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
 
 # =====================================================
-#   📋 پست‌های امروز
+#   📋 پست‌های امروز (استخراج شماره آگهی از متن)
 # =====================================================
+import re
+
+def extract_ad_number(text: str):
+    if not text:
+        return None
+    m = re.search(r"آگهی شماره\s*#(\d+)", text)
+    if m:
+        return m.group(1)
+    return None
+
+
 @router.message(F.text.contains("پست‌های امروز"))
 async def today(message: types.Message):
     posts = list_today_posts()
     if not posts:
-        return await message.answer("📭 امروز پستی نیست.", reply_markup=admin_keyboard())
+        return await message.answer("📭 امروز هیچ پستی نیست.", reply_markup=admin_keyboard())
 
     txt = "<b>📋 پست‌های امروز</b>\n\n"
+
     for p in posts:
-        icon = "🔔" if p["active"] else "❌"
-        txt += f"{icon} <code>{p['message_id']}</code>\n"
+        msg_id = p["message_id"]
+
+        try:
+            # گرفتن متن واقعی پیام از کانال مبدا
+            post = await message.bot.get_chat_message(SETTINGS.SOURCE_CHANNEL_ID, msg_id)
+            caption = post.caption or post.text or ""
+        except:
+            caption = ""
+
+        ad_no = extract_ad_number(caption)
+
+        if ad_no:
+            txt += f"🔖 آگهی شماره #{ad_no}\n"
+        else:
+            txt += f"🔖 پیام {msg_id}\n"
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=admin_keyboard())
+
 
 # =====================================================
 #   ⏱ تنظیم فاصله
