@@ -8,13 +8,11 @@ from app.handlers.scheduler import set_interval
 
 router = Router()
 
-
 # =====================================================
 #   ابزار: تشخیص ادمین از روی ENV
 # =====================================================
 def is_admin(uid: int) -> bool:
     return uid == SETTINGS.OWNER_ID or uid in SETTINGS.ADMIN_IDS
-
 
 # =====================================================
 #   کیبوردها
@@ -27,12 +25,11 @@ def admin_keyboard():
                 types.KeyboardButton(text="📋 پست‌های امروز"),
             ],
             [
-                types.KeyboardButton(text="⏱ تنظیم فاصله")
+                types.KeyboardButton(text="⏱ تنظیم فاصله"),
             ]
         ],
         resize_keyboard=True
     )
-
 
 def dests_keyboard():
     return types.ReplyKeyboardMarkup(
@@ -40,19 +37,18 @@ def dests_keyboard():
             [
                 types.KeyboardButton(text="➕ افزودن مقصد"),
                 types.KeyboardButton(text="🗑 حذف مقصد"),
-                types.KeyboardButton(text="📋 لیست مقصدها")
+                types.KeyboardButton(text="📋 لیست مقصدها"),
             ],
             [
-                types.KeyboardButton(text="🔙 بازگشت")
+                types.KeyboardButton(text="🔙 بازگشت"),
             ]
         ],
         resize_keyboard=True
     )
 
-
-# حالت انتظار جهت افزودن مقصد
+# دو حالت انتظار برای افزودن و حذف
 ADD_DEST_WAIT = set()
-
+DEL_DEST_WAIT = set()
 
 # =====================================================
 #   /admin → ورود به پنل
@@ -63,7 +59,6 @@ async def admin_start(message: types.Message):
         return await message.answer("⛔ شما ادمین نیستید.")
     return await message.answer("🔧 پنل مدیریت ربات", reply_markup=admin_keyboard())
 
-
 # =====================================================
 #   📍 مدیریت مقصدها
 # =====================================================
@@ -71,16 +66,15 @@ async def admin_start(message: types.Message):
 async def menu_dest(message: types.Message):
     return await message.answer(
         "📍 <b>مدیریت مقصدها</b>\n\n"
-        "➕ افزودن مقصد → آیدی یا لینک گروه را بفرست\n"
-        "🗑 حذف مقصد → فقط chat_id را بزن\n"
-        "📋 لیست مقصدها → نمایش همه مقاصد\n",
+        "➕ افزودن مقصد → آیدی یا لینک گروه را ارسال کنید\n"
+        "🗑 حذف مقصد → فقط chat_id را ارسال کنید\n"
+        "📋 لیست مقصدها → نمایش همه گروه‌های مقصد\n",
         parse_mode="HTML",
         reply_markup=dests_keyboard()
     )
 
-
 # =====================================================
-#   ➕ افزودن مقصد
+#   ➕ افزودن مقصد (بدون فوروارد)
 # =====================================================
 def extract_chat(text: str):
     text = text.strip()
@@ -98,27 +92,25 @@ def extract_chat(text: str):
 
     return None, None
 
-
 @router.message(F.text.contains("افزودن مقصد"))
 async def ask_add_dest(message: types.Message):
     ADD_DEST_WAIT.add(message.from_user.id)
     return await message.answer(
-        "chat_id یا لینک گروه را ارسال کنید:\n"
+        "لطفاً chat_id یا لینک گروه را ارسال کنید:\n\n"
         "<code>-1001234567890</code>\n"
         "<code>t.me/groupname</code>",
         parse_mode="HTML"
     )
 
-
 @router.message(F.text, F.from_user.id.func(lambda uid: uid in ADD_DEST_WAIT))
 async def handle_add_dest(message: types.Message):
     uid = message.from_user.id
     raw = message.text.strip()
-    chat_id, username = extract_chat(raw)
-
     ADD_DEST_WAIT.remove(uid)
 
-    # chat_id مستقیم
+    chat_id, username = extract_chat(raw)
+
+    # حالت chat_id مستقیم
     if chat_id:
         ok = add_destination(chat_id, "")
         return await message.answer(
@@ -126,7 +118,7 @@ async def handle_add_dest(message: types.Message):
             reply_markup=dests_keyboard()
         )
 
-    # username / لینک
+    # حالت username
     if username:
         try:
             chat = await message.bot.get_chat(username)
@@ -148,30 +140,36 @@ async def handle_add_dest(message: types.Message):
 
     return await message.answer("❗ ورودی معتبر نبود.", reply_markup=dests_keyboard())
 
-
 # =====================================================
 #   🗑 حذف مقصد
 # =====================================================
 @router.message(F.text.contains("حذف مقصد"))
 async def ask_delete(message: types.Message):
+    DEL_DEST_WAIT.add(message.from_user.id)
     return await message.answer(
-        "chat_id مقصد را بفرست:\n<code>-100xxxxxxxx</code>",
+        "chat_id مقصد را ارسال کنید:\n<code>-100xxxxxxxx</code>",
         parse_mode="HTML"
     )
 
-
-@router.message(F.text.regexp(r"^-?\d+$"))
+@router.message(F.text, F.from_user.id.func(lambda uid: uid in DEL_DEST_WAIT))
 async def del_dest(message: types.Message):
-    cid = int(message.text)
+    uid = message.from_user.id
+    DEL_DEST_WAIT.remove(uid)
+
+    try:
+        cid = int(message.text)
+    except:
+        return await message.answer("❗ عدد معتبر نیست.", reply_markup=dests_keyboard())
+
     ok = remove_destination(cid)
+
     return await message.answer(
         "🗑 حذف شد." if ok else "❗ مقصدی با این آیدی نبود.",
         reply_markup=dests_keyboard()
     )
 
-
 # =====================================================
-#   📋 لیست مقصدها (با لینک قابل کلیک)
+#   📋 لیست مقصدها (اسم گروه + لینک کلیک‌پذیر)
 # =====================================================
 @router.message(F.text.contains("لیست مقصد"))
 async def list_dest(message: types.Message):
@@ -180,23 +178,23 @@ async def list_dest(message: types.Message):
         return await message.answer("❗ هیچ مقصدی وجود ندارد.", reply_markup=dests_keyboard())
 
     txt = "<b>📍 لیست مقصدها</b>\n\n"
+    index = 1
 
     for d in dests:
         cid = d["chat_id"]
-        title = d.get("title", "")
+        title = d.get("title", "") or "گروه"
 
-        # ساخت لینک قابل کلیک به گروه
+        # تبدیل chat_id به internal_id
         internal_id = str(cid).replace("-100", "")
+
+        # لینک ورود به گروه
         link = f"https://t.me/c/{internal_id}/1"
 
-        txt += (
-            f"● <b>{title or 'Dest'}</b>\n"
-            f"<code>{cid}</code>\n"
-            f"<a href=\"{link}\">ورود به گروه</a>\n\n"
-        )
+        # نمایش نهایی (فقط اسم گروه + کلیک)
+        txt += f"{index}/ <a href=\"{link}\">{title}</a>\n"
+        index += 1
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
-
 
 # =====================================================
 #   📋 پست‌های امروز
@@ -214,7 +212,6 @@ async def today(message: types.Message):
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=admin_keyboard())
 
-
 # =====================================================
 #   ⏱ تنظیم فاصله
 # =====================================================
@@ -227,7 +224,6 @@ async def ask_interval(message: types.Message):
         "<code>10</code> — ۱۰ دقیقه",
         parse_mode="HTML"
     )
-
 
 @router.message(F.text.regexp(r"^\d+[mh]?$"))
 async def set_int(message: types.Message):
@@ -245,7 +241,6 @@ async def set_int(message: types.Message):
         parse_mode="HTML",
         reply_markup=admin_keyboard()
     )
-
 
 # =====================================================
 #   🔙 بازگشت
