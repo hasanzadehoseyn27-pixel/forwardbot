@@ -1,4 +1,4 @@
-from aiogram import Router, types
+from aiogram import Router, types, F
 from datetime import date
 
 from app.config import SETTINGS
@@ -12,11 +12,10 @@ router = Router()
 @router.channel_post()
 async def on_channel_post(message: types.Message):
     """
-    این تابع هر پست جدیدی که در کانال مبدا ارسال شود را دریافت می‌کند،
-    سپس آن را ذخیره کرده و یک دکمه فعال/غیرفعال زیر آن ایجاد می‌کند.
+    وقتی پست جدید در کانال مبدا ارسال می‌شود:
+    - ذخیره شود
+    - دکمه فعال/غیرفعال زیر آن نمایش داده شود
     """
-
-    # فقط پست‌های کانال مبدا
     if message.chat.id != SETTINGS.SOURCE_CHANNEL_ID:
         return
 
@@ -39,7 +38,7 @@ async def on_channel_post(message: types.Message):
     )
 
     await message.reply(
-        "🔔 این پست اکنون **فعال** است و در زمان‌بندی ارسال خواهد شد.",
+        "🔔 این پست فعال است و ارسال خواهد شد.",
         reply_markup=kb
     )
 
@@ -48,15 +47,14 @@ async def on_channel_post(message: types.Message):
 
 # ------------------ تغییر وضعیت پست از داخل کانال ------------------ #
 
-@router.callback_query(types.CallbackQuery.data.startswith("toggle:"))
+@router.callback_query(F.data.startswith("toggle:"))
 async def toggle_status(call: types.CallbackQuery):
     """
-    فعال/غیرفعال کردن پست از داخل کانال مبدا (با دکمه زیر پست)
+    فعال/غیرفعال کردن پست از داخل کانال
     """
 
     msg_id = int(call.data.split(":")[1])
 
-    # پیدا کردن پست در لیست امروز
     posts = list_today_posts()
     target = None
 
@@ -68,31 +66,32 @@ async def toggle_status(call: types.CallbackQuery):
     if not target:
         return await call.answer("❗ پست امروز یافت نشد.", show_alert=True)
 
-    # تغییر وضعیت
     new_state = not target["active"]
     set_post_active(msg_id, new_state)
 
-    # متن مناسب
     if new_state:
-        btn_text = "🔔 فعال (ارسال می‌شود)"
-        msg_text = "پست اکنون **فعال** است."
+        btn_text = "❌ غیرفعال کن"
+        alert = "🔔 پست فعال شد."
     else:
-        btn_text = "❌ غیرفعال (ارسال نمی‌شود)"
-        msg_text = "پست اکنون **غیرفعال** شد."
+        btn_text = "🔔 فعال کن"
+        alert = "❌ پست غیرفعال شد."
 
-    # کیبورد جدید
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text=btn_text, callback_data=f"toggle:{msg_id}")]
+            [
+                types.InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"toggle:{msg_id}"
+                )
+            ]
         ]
     )
 
-    # بروزرسانی دکمه
     try:
         await call.message.edit_reply_markup(reply_markup=kb)
     except:
         pass
 
-    await call.answer(msg_text, show_alert=False)
+    await call.answer(alert, show_alert=False)
 
-    print(f"[SOURCE] Post {msg_id} state changed → {new_state}")
+    print(f"[SOURCE] Post {msg_id} updated → {new_state}")

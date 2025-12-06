@@ -157,7 +157,7 @@ async def show_today_posts(message: types.Message):
         await message.answer(f"پست `{msg_id}`", reply_markup=kb, parse_mode="Markdown")
 
 
-# ---------------------- تغییر وضعیت پست ---------------------- #
+# ---------------------- تغییر وضعیت پست از پنل ادمین ---------------------- #
 
 @router.callback_query(F.data.startswith("toggle_admin:"))
 async def toggle_from_admin(call: types.CallbackQuery):
