@@ -16,13 +16,14 @@ from app.handlers.scheduler import (
 
 router = Router()
 
-
 # -------------------- تشخیص ادمین -------------------- #
+
 def is_admin(uid: int) -> bool:
     return uid == SETTINGS.OWNER_ID or uid in SETTINGS.ADMIN_IDS
 
 
 # -------------------- کیبوردها -------------------- #
+
 def admin_keyboard():
     return types.ReplyKeyboardMarkup(
         keyboard=[
@@ -57,12 +58,53 @@ def dests_keyboard():
         resize_keyboard=True
     )
 
+def send_mode_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                types.KeyboardButton(text="🔁 ارسال دائمی"),
+                types.KeyboardButton(text="1️⃣ ارسال یکبار"),
+            ],
+            [
+                types.KeyboardButton(text="🔙 بازگشت")
+            ]
+        ],
+        resize_keyboard=True
+    )
 
-ADD_DEST_WAIT = set()
-DEL_DEST_WAIT = set()
+
+def interval_unit_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                types.KeyboardButton(text="⏱ ثانیه‌ای"),
+                types.KeyboardButton(text="🕰 دقیقه‌ای"),
+                types.KeyboardButton(text="⏳ ساعتی")
+            ],
+            [
+                types.KeyboardButton(text="🔙 بازگشت")
+            ]
+        ],
+        resize_keyboard=True
+    )
+
+
+def back_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text="🔙 بازگشت")]],
+        resize_keyboard=True
+    )
+
+
+# -------------------- وضعیت‌ها -------------------- #
+
+SEND_MENU = set()
+INTERVAL_UNIT = {}      # user_id → sec/min/hour
+WAIT_INTERVAL_VALUE = set()
 
 
 # -------------------- /admin -------------------- #
+
 @router.message(Command("admin"))
 async def admin_start(message: types.Message):
     if not is_admin(message.from_user.id):
@@ -70,303 +112,68 @@ async def admin_start(message: types.Message):
     return await message.answer("🔧 پنل مدیریت ربات", reply_markup=admin_keyboard())
 
 
-# -------------------- مدیریت مقصدها -------------------- #
-def extract_chat(text: str):
-    text = text.strip()
+# -------------------- حالت ارسال -------------------- #
 
-    if text.startswith("-100") and text[1:].isdigit():
-        return int(text), None
-
-    if "t.me/" in text:
-        username = text.split("t.me/")[1]
-        username = username.replace("https://", "").replace("http://", "")
-        username = username.split("/")[0]
-        return None, username
-
-    return None, None
-
-
-@router.message(F.text.contains("مدیریت مقصد"))
-async def menu_dest(message: types.Message):
-    return await message.answer(
-        "📍 <b>مدیریت مقصدها</b>\n\n"
-        "➕ افزودن مقصد → آیدی یا لینک گروه را ارسال کنید\n"
-        "🗑 حذف مقصد → فقط chat_id را بفرست\n"
-        "📋 لیست مقصدها → نمایش همه مقصدها\n",
-        parse_mode="HTML",
-        reply_markup=dests_keyboard()
-    )
-
-
-# -------------------- افزودن مقصد -------------------- #
-@router.message(F.text.contains("افزودن مقصد"))
-async def ask_add_dest(message: types.Message):
-    ADD_DEST_WAIT.add(message.from_user.id)
-    return await message.answer(
-        "chat_id یا لینک گروه را ارسال کنید:\n"
-        "<code>-1001234567890</code>\n"
-        "<code>t.me/groupname</code>",
-        parse_mode="HTML"
-    )
-
-
-@router.message(F.text, F.from_user.id.func(lambda uid: uid in ADD_DEST_WAIT))
-async def handle_add_dest(message: types.Message):
+@router.message(F.text == "🔁 حالت ارسال")
+async def send_mode(message: types.Message):
     uid = message.from_user.id
-    raw = message.text.strip()
-    ADD_DEST_WAIT.remove(uid)
-
-    chat_id, username = extract_chat(raw)
-
-    if chat_id:
-        try:
-            chat = await message.bot.get_chat(chat_id)
-            title = chat.title or getattr(chat, "full_name", "") or "گروه"
-        except:
-            title = "گروه"
-
-        add_destination(chat_id, title)
-
-        return await message.answer(
-            f"✅ مقصد اضافه شد:\n<code>{chat_id}</code> — {title}",
-            parse_mode="HTML",
-            reply_markup=dests_keyboard()
-        )
-
-    if username:
-        try:
-            chat = await message.bot.get_chat(username)
-            cid = chat.id
-            title = chat.title or getattr(chat, "full_name", "") or "گروه"
-
-            add_destination(cid, title)
-
-            return await message.answer(
-                f"✅ مقصد اضافه شد:\n<code>{cid}</code> — {title}",
-                parse_mode="HTML",
-                reply_markup=dests_keyboard()
-            )
-        except Exception as e:
-            return await message.answer(
-                f"❗ خطا در گرفتن اطلاعات گروه.\n<code>{e}</code>",
-                parse_mode="HTML",
-                reply_markup=dests_keyboard()
-            )
-
-    return await message.answer("❗ ورودی معتبر نبود.", reply_markup=dests_keyboard())
+    SEND_MENU.add(uid)
+    return await message.answer("لطفاً حالت ارسال را انتخاب کنید:", reply_markup=send_mode_keyboard())
 
 
-# -------------------- حذف مقصد -------------------- #
-@router.message(F.text.contains("حذف مقصد"))
-async def ask_delete(message: types.Message):
-    DEL_DEST_WAIT.add(message.from_user.id)
-    return await message.answer(
-        "chat_id مقصد را ارسال کنید:\n<code>-100xxxxxxxx</code>",
-        parse_mode="HTML"
-    )
-
-
-@router.message(F.text, F.from_user.id.func(lambda uid: uid in DEL_DEST_WAIT))
-async def del_dest(message: types.Message):
+@router.message(F.text == "🔁 ارسال دائمی")
+async def send_always(message: types.Message):
     uid = message.from_user.id
-    DEL_DEST_WAIT.remove(uid)
+    SEND_MENU.add(uid)
 
-    try:
-        cid = int(message.text)
-    except:
-        return await message.answer("❗ عدد معتبر نیست.", reply_markup=dests_keyboard())
-
-    ok = remove_destination(cid)
+    await set_send_mode(False)
 
     return await message.answer(
-        "🗑 حذف شد." if ok else "❗ مقصدی با این آیدی وجود ندارد.",
-        reply_markup=dests_keyboard()
+        "واحد زمانی را انتخاب کنید:",
+        reply_markup=interval_unit_keyboard()
     )
 
 
-# -------------------- لیست مقصدها -------------------- #
-@router.message(F.text.contains("لیست مقصد"))
-async def list_dest(message: types.Message):
-    dests = list_destinations()
-    if not dests:
-        return await message.answer("❗ هنوز هیچ مقصدی ثبت نشده است.", reply_markup=dests_keyboard())
-
-    txt = "<b>📍 لیست مقصدها</b>\n\n"
-    index = 1
-
-    for d in dests:
-        cid = d["chat_id"]
-        title = d.get("title", "") or "گروه"
-        internal_id = str(cid).replace("-100", "")
-        link = f"https://t.me/c/{internal_id}/1"
-        txt += f"{index}/ <a href=\"{link}\">{title}</a>\n"
-        index += 1
-
-    return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
-
-
-# -------------------- نمایش همه پست‌ها -------------------- #
-@router.message(F.text.contains("پست‌ها"))
-async def all_posts(message: types.Message):
-
-    posts = list_all_posts()
-    if not posts:
-        return await message.answer("📭 هیچ پستی وجود ندارد.", reply_markup=admin_keyboard())
-
-    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
-
-    for p in posts:
-        msg_id = p["message_id"]
-        active = p.get("active", True)
-
-        # گرفتن شماره آگهی واقعی با Forward Trick
-        try:
-            fwd = await message.bot.forward_message(
-                chat_id=message.chat.id,
-                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
-                message_id=msg_id
-            )
-            caption = fwd.caption or fwd.text or ""
-            await fwd.delete()
-        except:
-            caption = ""
-
-        # پیدا کردن شماره آگهی
-        m = re.search(r"آگهی شماره\s*#(\d+)", caption)
-        ad_no = m.group(1) if m else msg_id
-
-        bell = "🔔" if active else "🔕"
-
-        text = (
-            f'<a href="https://t.me/c/{internal_id}/{msg_id}">{bell} آگهی شماره #{ad_no}</a>'
-        )
-
-        kb = types.InlineKeyboardMarkup(
-            inline_keyboard=[[
-                types.InlineKeyboardButton(
-                    text="❌ خاموش" if active else "✅ روشن",
-                    callback_data=f"toggle:{msg_id}"
-                )
-            ]]
-        )
-
-        await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-
-# -------------------- لیست پست‌های خاموش -------------------- #
-@router.message(F.text.contains("پست‌های خاموش"))
-async def inactive_posts(message: types.Message):
-
-    posts = list_inactive_posts()
-    if not posts:
-        return await message.answer("🌓 پست خاموش وجود ندارد.", reply_markup=admin_keyboard())
-
-    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
-
-    for p in posts:
-        msg_id = p["message_id"]
-
-        # forward trick برای گرفتن شماره آگهی
-        try:
-            fwd = await message.bot.forward_message(
-                chat_id=message.chat.id,
-                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
-                message_id=msg_id
-            )
-            caption = fwd.caption or fwd.text or ""
-            await fwd.delete()
-        except:
-            caption = ""
-
-        # شماره آگهی
-        m = re.search(r"آگهی شماره\s*#(\d+)", caption)
-        ad_no = m.group(1) if m else msg_id
-
-        text = (
-            f'<a href="https://t.me/c/{internal_id}/{msg_id}">🔕 آگهی شماره #{ad_no}</a>'
-        )
-
-        kb = types.InlineKeyboardMarkup(
-            inline_keyboard=[[
-                types.InlineKeyboardButton(
-                    text="✅ روشن کردن",
-                    callback_data=f"toggle:{msg_id}"
-                )
-            ]]
-        )
-
-        await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-
-# -------------------- Callback روشن/خاموش -------------------- #
-@router.callback_query(F.data.startswith("toggle:"))
-async def toggle_handler(query: types.CallbackQuery):
-    msg_id = int(query.data.split(":")[1])
-
-    new_state = toggle_post(msg_id)
-    if new_state is None:
-        return await query.answer("❗ پست یافت نشد!", show_alert=True)
-
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[[
-            types.InlineKeyboardButton(
-                text="❌ خاموش" if new_state else "✅ روشن",
-                callback_data=f"toggle:{msg_id}"
-            )
-        ]]
+@router.message(F.text == "1️⃣ ارسال یکبار")
+async def send_once(message: types.Message):
+    await set_send_mode(True)
+    return await message.answer(
+        "✔ حالت ارسال «یکبار» فعال شد.",
+        reply_markup=send_mode_keyboard()
     )
 
-    await query.answer("✔ تغییر انجام شد.")
-    await query.message.edit_reply_markup(reply_markup=kb)
+
+# -------------------- انتخاب واحد زمانی -------------------- #
+
+@router.message(F.text.in_(["⏱ ثانیه‌ای", "🕰 دقیقه‌ای", "⏳ ساعتی"]))
+async def choose_unit(message: types.Message):
+    uid = message.from_user.id
+
+    if "ثانیه" in message.text:
+        INTERVAL_UNIT[uid] = "sec"
+        txt = "⏱ مقدار را به ثانیه وارد کنید:"
+    elif "دقیقه" in message.text:
+        INTERVAL_UNIT[uid] = "min"
+        txt = "🕰 مقدار را به دقیقه وارد کنید:"
+    else:
+        INTERVAL_UNIT[uid] = "hour"
+        txt = "⏳ مقدار را به ساعت وارد کنید:"
+
+    WAIT_INTERVAL_VALUE.add(uid)
+
+    return await message.answer(txt, reply_markup=back_keyboard())
 
 
-# -------------------- تنظیم فاصله (ثانیه/دقیقه/ساعت) -------------------- #
-@router.message(F.text.contains("تنظیم فاصله"))
-async def interval_menu(message: types.Message):
-
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                types.InlineKeyboardButton(text="⏱ ثانیه‌ای", callback_data="iv:sec"),
-                types.InlineKeyboardButton(text="🕰 دقیقه‌ای", callback_data="iv:min"),
-                types.InlineKeyboardButton(text="⏳ ساعتی", callback_data="iv:hour"),
-            ],
-            [
-                types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="iv:back")
-            ]
-        ]
-    )
-
-    await message.answer("واحد زمانی را انتخاب کنید:", reply_markup=kb)
-
-
-@router.callback_query(F.data.startswith("iv:"))
-async def interval_unit(query: types.CallbackQuery):
-
-    unit = query.data.split(":")[1]
-
-    if unit == "back":
-        return await query.message.edit_text("🔧 تنظیمات", reply_markup=None)
-
-    txt = {
-        "sec": "⏱ لطفاً زمان را به ثانیه وارد کنید:",
-        "min": "🕰 لطفاً زمان را به دقیقه وارد کنید:",
-        "hour": "⏳ لطفاً زمان را به ساعت وارد کنید:",
-    }[unit]
-
-    await query.message.answer(txt)
-
-    query.message.bot["interval_unit"] = unit  # ذخیره نوع واحد
-
+# -------------------- ورود مقدار فاصله -------------------- #
 
 @router.message(F.text.regexp(r"^\d+$"))
 async def interval_value(message: types.Message):
-
-    unit = message.bot.get("interval_unit", None)
-    if not unit:
-        return  # ربطی ندارد
+    uid = message.from_user.id
+    if uid not in WAIT_INTERVAL_VALUE:
+        return
 
     value = int(message.text)
+    unit = INTERVAL_UNIT.get(uid)
 
     if unit == "sec":
         sec = value
@@ -380,47 +187,135 @@ async def interval_value(message: types.Message):
 
     await set_interval(sec)
 
-    await message.answer(f"✔ زمان تکرار شما هر {label} ثبت شد.", reply_markup=admin_keyboard())
+    WAIT_INTERVAL_VALUE.remove(uid)
+    INTERVAL_UNIT.pop(uid, None)
 
-
-# -------------------- حالت ارسال (دائمی / یکبار) -------------------- #
-@router.message(F.text.contains("حالت ارسال"))
-async def send_mode_menu(message: types.Message):
-
-    kb = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                types.InlineKeyboardButton(text="🔁 ارسال دائمی", callback_data="mode:always"),
-                types.InlineKeyboardButton(text="1️⃣ ارسال یکبار", callback_data="mode:once"),
-            ],
-            [
-                types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="mode:back")
-            ]
-        ]
+    return await message.answer(
+        f"✔ زمان تکرار هر {label} ثبت شد.",
+        reply_markup=send_mode_keyboard()
     )
-
-    await message.answer("حالت ارسال را انتخاب کنید:", reply_markup=kb)
-
-
-@router.callback_query(F.data.startswith("mode:"))
-async def change_mode(query: types.CallbackQuery):
-    mode = query.data.split(":")[1]
-
-    if mode == "back":
-        return await query.message.edit_text("🔧 تنظیمات", reply_markup=None)
-
-    if mode == "always":
-        await set_send_mode(False)
-        await query.answer("🔁 ارسال دائمی فعال شد ✔")
-
-    else:
-        await set_send_mode(True)
-        await query.answer("1️⃣ ارسال یکبار فعال شد ✔")
-
-    await query.message.delete()
 
 
 # -------------------- بازگشت -------------------- #
-@router.message(F.text.contains("بازگشت"))
+
+@router.message(F.text == "🔙 بازگشت")
 async def back_main(message: types.Message):
+    uid = message.from_user.id
+
+    SEND_MENU.discard(uid)
+    WAIT_INTERVAL_VALUE.discard(uid)
+    INTERVAL_UNIT.pop(uid, None)
+
     return await message.answer("بازگشت به پنل مدیریت", reply_markup=admin_keyboard())
+
+
+# -------------------- نمایش همه پست‌ها -------------------- #
+
+@router.message(F.text == "📋 پست‌ها")
+async def all_posts(message: types.Message):
+    posts = list_all_posts()
+    if not posts:
+        return await message.answer("📭 هیچ پستی وجود ندارد.", reply_markup=admin_keyboard())
+
+    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
+
+    for p in posts:
+        msg_id = p["message_id"]
+        active = p.get("active", True)
+
+        try:
+            fwd = await message.bot.forward_message(
+                chat_id=message.chat.id,
+                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
+                message_id=msg_id
+            )
+            caption = fwd.caption or fwd.text or ""
+            await fwd.delete()
+        except:
+            caption = ""
+
+        m = re.search(r"آگهی شماره\s*#(\d+)", caption)
+        ad_no = m.group(1) if m else msg_id
+
+        bell = "🔔" if active else "🔕"
+
+        text = f'<a href="https://t.me/c/{internal_id}/{msg_id}">{bell} آگهی شماره #{ad_no}</a>'
+
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(
+                        text="❌ خاموش" if active else "✅ روشن",
+                        callback_data=f"toggle:{msg_id}"
+                    )
+                ]
+            ]
+        )
+
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+# -------------------- نمایش پست‌های خاموش -------------------- #
+
+@router.message(F.text == "🌓 پست‌های خاموش")
+async def inactive_posts(message: types.Message):
+    posts = list_inactive_posts()
+    if not posts:
+        return await message.answer("هیچ پست خاموشی وجود ندارد.", reply_markup=admin_keyboard())
+
+    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
+
+    for p in posts:
+        msg_id = p["message_id"]
+
+        try:
+            fwd = await message.bot.forward_message(
+                chat_id=message.chat.id,
+                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
+                message_id=msg_id
+            )
+            caption = fwd.caption or fwd.text or ""
+            await fwd.delete()
+        except:
+            caption = ""
+
+        m = re.search(r"آگهی شماره\s*#(\d+)", caption)
+        ad_no = m.group(1) if m else msg_id
+
+        text = f'<a href="https://t.me/c/{internal_id}/{msg_id}">🔕 آگهی شماره #{ad_no}</a>'
+
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(
+                        text="✅ روشن",
+                        callback_data=f"toggle:{msg_id}"
+                    )
+                ]
+            ]
+        )
+
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+# -------------------- Toggle پست -------------------- #
+
+@router.callback_query(F.data.startswith("toggle:"))
+async def toggle_handler(query: types.CallbackQuery):
+    msg_id = int(query.data.split(":")[1])
+    new_state = toggle_post(msg_id)
+
+    await query.answer("✔ تغییر انجام شد.")
+
+    await query.message.edit_reply_markup(
+        reply_markup=types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(
+                        text="❌ خاموش" if new_state else "✅ روشن",
+                        callback_data=f"toggle:{msg_id}"
+                    )
+                ]
+            ]
+        )
+    )
