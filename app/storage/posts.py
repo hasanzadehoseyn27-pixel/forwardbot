@@ -25,25 +25,36 @@ def _save(data):
 
 # ---------------------- افزودن پست جدید ---------------------- #
 
-def add_post(message_id: int, msg_date: str):
+def add_post(message_id: int, msg_date: str, ad_number: int | None):
+    """
+    یک پست جدید با فیلدهای:
+    - message_id
+    - ad_number (شماره آگهی واقعی)
+    - date
+    - active
+    - sent_once
+    ذخیره می‌شود.
+    """
+
     data = _load()
 
+    # اگر پست تکراری باشد، دست نمی‌زنیم
     for p in data:
         if p["message_id"] == message_id and p["date"] == msg_date:
             return
 
-    data.append(
-        {
-            "message_id": message_id,
-            "date": msg_date,
-            "active": True,
-        }
-    )
+    data.append({
+        "message_id": message_id,
+        "ad_number": ad_number,
+        "date": msg_date,
+        "active": True,
+        "sent_once": False
+    })
 
     _save(data)
 
 
-# ---------------------- پست‌های امروز ---------------------- #
+# ---------------------- لیست پست‌های امروز ---------------------- #
 
 def list_today_posts():
     today = date.today().isoformat()
@@ -63,3 +74,38 @@ def toggle_post(message_id: int):
             return p["active"]
 
     return None
+
+
+# ---------------------- ثبت ارسال یکبار ---------------------- #
+
+def mark_sent_once(message_id: int):
+    """
+    وقتی پست در حالت one-time ارسال شد،
+    sent_once = True می‌شود.
+    """
+
+    data = _load()
+
+    for p in data:
+        if p["message_id"] == message_id:
+            p["sent_once"] = True
+            _save(data)
+            return True
+
+    return False
+
+
+# ---------------------- بررسی وضعیت ارسال یکبار ---------------------- #
+
+def is_sent_once(message_id: int) -> bool:
+    """
+    آیا این پست قبلاً یکبار ارسال شده؟
+    """
+
+    data = _load()
+
+    for p in data:
+        if p["message_id"] == message_id:
+            return p.get("sent_once", False)
+
+    return False

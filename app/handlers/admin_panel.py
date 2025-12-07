@@ -1,6 +1,5 @@
 from aiogram import Router, types, F
 from aiogram.filters import Command
-import re
 
 from app.config import SETTINGS
 from app.storage.dests import add_destination, remove_destination, list_destinations
@@ -9,14 +8,13 @@ from app.handlers.scheduler import set_interval
 
 router = Router()
 
-
 # -------------------- تشخیص ادمین -------------------- #
 
 def is_admin(uid: int) -> bool:
     return uid == SETTINGS.OWNER_ID or uid in SETTINGS.ADMIN_IDS
 
 
-# -------------------- کیبوردها -------------------- #
+# -------------------- کیبوردهای اصلی -------------------- #
 
 def admin_keyboard():
     return types.ReplyKeyboardMarkup(
@@ -26,7 +24,7 @@ def admin_keyboard():
                 types.KeyboardButton(text="📋 پست‌های امروز"),
             ],
             [
-                types.KeyboardButton(text="⏱ تنظیم فاصله"),
+                types.KeyboardButton(text="⚙ حالت ارسال"),
             ]
         ],
         resize_keyboard=True
@@ -41,9 +39,36 @@ def dests_keyboard():
                 types.KeyboardButton(text="🗑 حذف مقصد"),
                 types.KeyboardButton(text="📋 لیست مقصدها"),
             ],
+            [types.KeyboardButton(text="🔙 بازگشت")]
+        ],
+        resize_keyboard=True
+    )
+
+# --- کیبورد حالت ارسال (مرحله اول) --- #
+
+def sendmode_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
             [
-                types.KeyboardButton(text="🔙 بازگشت"),
-            ]
+                types.KeyboardButton(text="🔁 ارسال دائمی"),
+                types.KeyboardButton(text="1️⃣ ارسال یکبار"),
+            ],
+            [types.KeyboardButton(text="🔙 بازگشت")]
+        ],
+        resize_keyboard=True
+    )
+
+# --- مرحله دوم انتخاب واحد زمانی --- #
+
+def interval_unit_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                types.KeyboardButton(text="⏱ ثانیه‌ای"),
+                types.KeyboardButton(text="🕰 دقیقه‌ای"),
+                types.KeyboardButton(text="⏳ ساعتی"),
+            ],
+            [types.KeyboardButton(text="🔙 بازگشت")]
         ],
         resize_keyboard=True
     )
@@ -51,6 +76,9 @@ def dests_keyboard():
 
 ADD_DEST_WAIT = set()
 DEL_DEST_WAIT = set()
+
+SENDMODE_STATE = {}       # user_id → مرحله انتخاب حالت ارسال
+SENDMODE_UNIT = {}        # user_id → واحد انتخاب شده (s/m/h)
 
 
 # -------------------- /admin -------------------- #
@@ -122,7 +150,7 @@ async def handle_add_dest(message: types.Message):
         add_destination(chat_id, title)
 
         return await message.answer(
-            f"✅ مقصد اضافه شد:\n<code>{chat_id}</code> — {title}",
+            f"✅ مقصد اضافه شد:\n{title}",
             parse_mode="HTML",
             reply_markup=dests_keyboard()
         )
@@ -136,7 +164,7 @@ async def handle_add_dest(message: types.Message):
             add_destination(cid, title)
 
             return await message.answer(
-                f"✅ مقصد اضافه شد:\n<code>{cid}</code> — {title}",
+                f"✅ مقصد اضافه شد:\n{title}",
                 parse_mode="HTML",
                 reply_markup=dests_keyboard()
             )
@@ -185,23 +213,22 @@ async def del_dest(message: types.Message):
 async def list_dest(message: types.Message):
     dests = list_destinations()
     if not dests:
-        return await message.answer("❗ هنوز هیچ مقصدی ثبت نشده است.", reply_markup=dests_keyboard())
+        return await message.answer("❗ هنوز هیچ مقصدی ثبت نشده.", reply_markup=dests_keyboard())
 
     txt = "<b>📍 لیست مقصدها</b>\n\n"
-    index = 1
 
-    for d in dests:
+    for i, d in enumerate(dests, start=1):
         cid = d["chat_id"]
         title = d.get("title", "") or "گروه"
-        internal_id = str(cid).replace("-100", "")
-        link = f"https://t.me/c/{internal_id}/1"
-        txt += f"{index}/ <a href=\"{link}\">{title}</a>\n"
-        index += 1
+        internal = str(cid).replace("-100", "")
+        link = f"https://t.me/c/{internal}/1"
+
+        txt += f"{i}. <a href=\"{link}\">{title}</a>\n"
 
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
 
 
-# -------------------- پست‌های امروز + دکمه روشن/خاموش -------------------- #
+# -------------------- پست‌های امروز -------------------- #
 
 @router.message(F.text.contains("پست‌های امروز"))
 async def today(message: types.Message):
@@ -210,33 +237,36 @@ async def today(message: types.Message):
     if not posts:
         return await message.answer("📭 امروز هیچ پستی یافت نشد.", reply_markup=admin_keyboard())
 
-    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
+    internal = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
 
     for p in posts:
         msg_id = p["message_id"]
+        ad_num = p.get("ad_number", msg_id)
         active = p.get("active", True)
 
         bell = "🔔" if active else "🔕"
-        link = f"https://t.me/c/{internal_id}/{msg_id}"
+        link = f"https://t.me/c/{internal}/{msg_id}"
 
         text = (
-            f"{bell} <b>آگهی شماره {msg_id}</b>\n"
-            f"<a href=\"{link}\">مشاهده پست در کانال</a>"
+            f"{bell} <b>آگهی شماره #{ad_num}</b>\n"
+            f"<a href=\"{link}\">مشاهده پست</a>"
         )
 
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[[
+
                 types.InlineKeyboardButton(
-                    text="❌ خاموش کردن" if active else "✅ روشن کردن",
+                    text="✔ روشن" if active else "❌ خاموش",
                     callback_data=f"toggle:{msg_id}"
                 )
+
             ]]
         )
 
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
-# -------------------- Callback روشن/خاموش -------------------- #
+# -------------------- Toggle روشن/خاموش -------------------- #
 
 @router.callback_query(F.data.startswith("toggle:"))
 async def toggle_handler(query: types.CallbackQuery):
@@ -249,7 +279,7 @@ async def toggle_handler(query: types.CallbackQuery):
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[[
             types.InlineKeyboardButton(
-                text="❌ خاموش کردن" if new_state else "✅ روشن کردن",
+                text="✔ روشن" if new_state else "❌ خاموش",
                 callback_data=f"toggle:{msg_id}"
             )
         ]]
@@ -259,35 +289,72 @@ async def toggle_handler(query: types.CallbackQuery):
     await query.message.edit_reply_markup(reply_markup=kb)
 
 
-# -------------------- تنظیم فاصله -------------------- #
 
-@router.message(F.text.contains("فاصله"))
-async def ask_interval(message: types.Message):
-    return await message.answer(
-        "⏱ مقدار فاصله را ارسال کنید:\n"
-        "<code>5m</code>\n"
-        "<code>2h</code>\n"
-        "<code>10</code>",
-        parse_mode="HTML"
-    )
+# -------------------- حالت ارسال -------------------- #
+
+@router.message(F.text.contains("حالت ارسال"))
+async def sendmode_menu(message: types.Message):
+    SENDMODE_STATE[message.from_user.id] = "main"
+    return await message.answer("یکی از حالت‌های ارسال را انتخاب کنید:", reply_markup=sendmode_keyboard())
 
 
-@router.message(F.text.regexp(r"^\d+[mh]?$"))
-async def set_int(message: types.Message):
-    raw = message.text.lower()
+# --- انتخاب ارسال دائمی یا یکبار --- #
 
-    if raw.isdigit():
-        sec = int(raw) * 60
-    elif raw.endswith("m"):
-        sec = int(raw[:-1]) * 60
-    elif raw.endswith("h"):
-        sec = int(raw[:-1]) * 3600
+@router.message(F.text.in_(["🔁 ارسال دائمی", "1️⃣ ارسال یکبار"]))
+async def choose_sendmode(message: types.Message):
+    uid = message.from_user.id
+
+    if message.text == "1️⃣ ارسال یکبار":
+        SETTINGS.SEND_MODE = "once"
+        return await message.answer("🔔 حالت «ارسال یکبار» فعال شد.", reply_markup=admin_keyboard())
+
+    SETTINGS.SEND_MODE = "repeat"
+    SENDMODE_STATE[uid] = "choose_unit"
+
+    return await message.answer("واحد زمانی را انتخاب کنید:", reply_markup=interval_unit_keyboard())
+
+
+# --- مرحله انتخاب واحد زمانی --- #
+
+@router.message(F.text.in_(["⏱ ثانیه‌ای", "🕰 دقیقه‌ای", "⏳ ساعتی"]))
+async def choose_unit(message: types.Message):
+    uid = message.from_user.id
+
+    if message.text == "⏱ ثانیه‌ای":
+        SENDMODE_UNIT[uid] = "s"
+    elif message.text == "🕰 دقیقه‌ای":
+        SENDMODE_UNIT[uid] = "m"
+    else:
+        SENDMODE_UNIT[uid] = "h"
+
+    return await message.answer("⏱ مقدار را وارد کنید:", reply_markup=types.ReplyKeyboardRemove())
+
+
+# --- مقدار زمانی --- #
+
+@router.message(F.text.regexp(r"^\d+$"))
+async def set_interval_value(message: types.Message):
+    uid = message.from_user.id
+
+    if uid not in SENDMODE_UNIT:
+        return  # irrelevant
+
+    unit = SENDMODE_UNIT.pop(uid)
+    value = int(message.text)
+
+    if unit == "s":
+        sec = value
+    elif unit == "m":
+        sec = value * 60
+    else:
+        sec = value * 3600
 
     await set_interval(sec)
 
+    SETTINGS.SEND_MODE = "repeat"
+
     return await message.answer(
-        f"⏱ فاصله روی <code>{sec}</code> ثانیه تنظیم شد.",
-        parse_mode="HTML",
+        f"⏱ فاصله روی {sec} ثانیه تنظیم شد.",
         reply_markup=admin_keyboard()
     )
 
@@ -295,6 +362,5 @@ async def set_int(message: types.Message):
 # -------------------- بازگشت -------------------- #
 
 @router.message(F.text.contains("بازگشت"))
-async def back_main(message: types.Message):
+async def back(message: types.Message):
     return await message.answer("بازگشت به پنل مدیریت", reply_markup=admin_keyboard())
-#ss
