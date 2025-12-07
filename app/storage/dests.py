@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-# مسیر ذخیره پایدار در لیارا
-BASE = Path("/app/storage")
-BASE.mkdir(exist_ok=True)
+# مسیر امن و قابل نوشتن در لیارا
+BASE = Path("/usr/src/app/storage")
+BASE.mkdir(parents=True, exist_ok=True)
 
 DATA = BASE / "fwd_dests.json"
 
