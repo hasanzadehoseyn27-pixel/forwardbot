@@ -1,5 +1,4 @@
 import asyncio
-from datetime import date
 from aiogram import Bot
 
 from app.config import SETTINGS
@@ -9,7 +8,6 @@ from app.storage.posts import (
     toggle_sent
 )
 from app.storage.dests import list_destinations
-
 
 # فاصله پیش‌فرض (۳۰ دقیقه)
 INTERVAL = 60 * 30
@@ -52,21 +50,61 @@ async def forward_post(bot: Bot, message_id: int, dest_id: int):
         print(f"[SCHEDULER] ERROR sending to {dest_id}: {e}")
 
 
+# ================================
+# 🚀 ارسال فوری برای حالت "یکبار"
+# ================================
+async def send_now(bot: Bot, message_id: int):
+    """
+    ارسال فوری پست وقتی حالت یک‌بار فعال است.
+    """
+    dests = list_destinations()
+    if not dests:
+        print("[SCHEDULER] No destinations for immediate send.")
+        return
+
+    print(f"[SCHEDULER] Immediate send for msg:{message_id}")
+
+    for d in dests:
+        await forward_post(bot, message_id, d["chat_id"])
+
+    toggle_sent(message_id)
+
+
+# ================================
+# 🚀 Scheduler اصلی
+# ================================
+
 async def start_scheduler(bot: Bot):
     """
-    حلقه پس‌زمینه برای ارسال خودکار پیام‌ها.
+    Scheduler اصلی برای ارسال خودکار پیام‌ها.
     """
     print("[SCHEDULER] Scheduler started and running...")
 
     while True:
         try:
-            # انتخاب لیست پست‌ها با توجه به حالت ارسال
+            # حالت "ارسال یکبار" → فقط پست‌های ارسال‌نشده قدیمی
             if SEND_ONCE_MODE:
-                posts = list_unsent_posts()     # فقط پست‌هایی که هنوز ارسال نشده‌اند
-            else:
-                posts = list_all_posts()        # همه پست‌ها
+                posts = list_unsent_posts()
 
-            dests = list_destinations()         # مقصدها
+                if posts:
+                    print(f"[SCHEDULER] Sending {len(posts)} unsent posts...")
+                    dests = list_destinations()
+
+                    for p in posts:
+                        msg_id = p["message_id"]
+
+                        for d in dests:
+                            await forward_post(bot, msg_id, d["chat_id"])
+
+                        toggle_sent(msg_id)
+
+                # حالت یک‌بار نیازی به interval ندارد → فقط منتظر پست جدید بماند
+                await asyncio.sleep(3)
+                continue
+
+            # حالت دائمی → ارسال دوره‌ای
+            posts = list_all_posts()
+            dests = list_destinations()
 
             if not posts:
                 print("[SCHEDULER] No posts to send.")
@@ -75,7 +113,6 @@ async def start_scheduler(bot: Bot):
             else:
                 print(f"[SCHEDULER] Sending {len(posts)} posts → {len(dests)} destinations")
 
-                # ارسال پست‌ها
                 for p in posts:
                     if not p.get("active", True):
                         print(f"[SCHEDULER] Skip inactive post {p['message_id']}")
@@ -83,17 +120,11 @@ async def start_scheduler(bot: Bot):
 
                     msg_id = p["message_id"]
 
-                    for dest in dests:
-                        dest_id = dest["chat_id"]
-                        await forward_post(bot, msg_id, dest_id)
-
-                    # اگر حالت یکبار فعال است → sent = True شود
-                    if SEND_ONCE_MODE:
-                        toggle_sent(msg_id)
+                    for d in dests:
+                        await forward_post(bot, msg_id, d["chat_id"])
 
                 print("[SCHEDULER] Forward cycle completed.")
 
-            # انتظار
             await asyncio.sleep(INTERVAL)
 
         except Exception as e:
