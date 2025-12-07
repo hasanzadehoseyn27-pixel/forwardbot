@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-# مسیر پایدار داخل پروژه
+# مسیر صحیح و پایدار داخل پروژه
 BASE = Path("data")
 BASE.mkdir(parents=True, exist_ok=True)
 
@@ -21,7 +21,7 @@ def _load():
 
 
 def _save(data):
-    """ذخیره لیست مقصدها در فایل"""
+    """نوشتن تغییرات در فایل"""
     try:
         DATA.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     except:
@@ -31,10 +31,6 @@ def _save(data):
 # ---------------------- افزودن مقصد ---------------------- #
 
 def add_destination(chat_id: int, title: str = "") -> bool:
-    """
-    اگر chat_id قبلاً وجود داشته باشد → False
-    در غیر این صورت اضافه می‌شود.
-    """
     data = _load()
 
     for d in data:
@@ -66,5 +62,4 @@ def remove_destination(chat_id: int) -> bool:
 # ---------------------- لیست مقصدها ---------------------- #
 
 def list_destinations():
-    """خروجی مثل: [{'chat_id': -100123, 'title': 'فلان گروه'}]"""
     return _load()
