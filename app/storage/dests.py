@@ -1,30 +1,31 @@
 import json
 from pathlib import Path
 
+# مسیر ذخیره‌سازی (در صورت نیاز قابل تغییر به data/dests.json)
 DATA = Path("/tmp/fwd_dests.json")
 
 
-# ---------------------- ابزارهای داخلی ---------------------- #
+# ---------------------- ابزارهای فایل ---------------------- #
 
 def _load():
     """
-    خواندن لیست مقصدها از فایل.
+    خواندن فایل مقصدها.
     """
     if DATA.exists():
         try:
             return json.loads(DATA.read_text(encoding="utf-8"))
-        except:
+        except Exception:
             return []
     return []
 
 
 def _save(data):
     """
-    ذخیره‌سازی لیست مقصدها.
+    ذخیره‌سازی در فایل JSON.
     """
     try:
-        DATA.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-    except:
+        DATA.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
         pass
 
 
@@ -32,21 +33,24 @@ def _save(data):
 
 def add_destination(chat_id: int, title: str = "") -> bool:
     """
-    افزودن یک کانال/گروه مقصد جدید.
-    اگر قبلاً ثبت شده باشد → False برمی‌گرداند.
+    افزودن مقصد جدید:
+    - chat_id
+    - title (نام گروه)
+    
+    اگر آیدی تکراری باشد → False
     """
+
     data = _load()
 
-    for dest in data:
-        if dest["chat_id"] == chat_id:
-            return False  # تکراری
+    # جلوگیری از تکرار
+    for d in data:
+        if d["chat_id"] == chat_id:
+            return False
 
-    data.append(
-        {
-            "chat_id": chat_id,
-            "title": title
-        }
-    )
+    data.append({
+        "chat_id": chat_id,
+        "title": title or "گروه"
+    })
 
     _save(data)
     return True
@@ -58,13 +62,14 @@ def remove_destination(chat_id: int) -> bool:
     """
     حذف یک مقصد با chat_id.
     """
-    data = _load()
-    new_list = [d for d in data if d["chat_id"] != chat_id]
 
-    if len(new_list) == len(data):
+    data = _load()
+    new_data = [d for d in data if d["chat_id"] != chat_id]
+
+    if len(new_data) == len(data):
         return False  # چیزی حذف نشد
 
-    _save(new_list)
+    _save(new_data)
     return True
 
 
@@ -72,6 +77,13 @@ def remove_destination(chat_id: int) -> bool:
 
 def list_destinations():
     """
-    لیست کامل مقصدها را بازمی‌گرداند.
+    لیست مقصدها را برمی‌گرداند.
+
+    خروجی:
+    [
+        {"chat_id": -10012345, "title": "گروه تست"},
+        ...
+    ]
     """
+
     return _load()
