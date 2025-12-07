@@ -2,9 +2,13 @@ import json
 from pathlib import Path
 
 # مسیر صحیح و پایدار داخل پروژه
-BASE = Path("data")
-BASE.mkdir(parents=True, exist_ok=True)
+# BASE = Path("data")
+# BASE.mkdir(parents=True, exist_ok=True)
 
+# DATA = BASE / "fwd_dests.json"
+
+BASE = Path("/var/www/data")
+BASE.mkdir(parents=True, exist_ok=True)
 DATA = BASE / "fwd_dests.json"
 
 

@@ -3,7 +3,9 @@ from pathlib import Path
 
 # فایل تنظیمات در مسیر پایدار
 # SETTINGS_FILE = Path("/tmp/fwd_settings.json")
-SETTINGS_FILE = Path("data/fwd_settings.json")
+# SETTINGS_FILE = Path("data/fwd_settings.json")
+SETTINGS_FILE = Path("/var/www/data/fwd_settings.json")
+
 
 
 # ---------------------- ابزارهای داخلی ---------------------- #
