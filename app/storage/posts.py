@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from datetime import date
 
-BASE = Path("/data")
+BASE = Path("/storage")
 BASE.mkdir(parents=True, exist_ok=True)
 
 DATA = BASE / "fwd_posts.json"
@@ -26,11 +26,9 @@ def _save(data):
 
 def add_post(message_id: int, msg_date: str, ad_number: int | None):
     data = _load()
-
     for p in data:
         if p["message_id"] == message_id:
             return
-
     data.append({
         "message_id": message_id,
         "ad_number": ad_number,
@@ -38,21 +36,19 @@ def add_post(message_id: int, msg_date: str, ad_number: int | None):
         "active": True,
         "sent_once": False
     })
-
     _save(data)
 
 
 def list_today_posts():
     today = date.today().isoformat()
-    data = _load()
-    return [p for p in data if p["date"] == today]
+    return [p for p in _load() if p["date"] == today]
 
 
 def toggle_post(message_id: int):
     data = _load()
     for p in data:
         if p["message_id"] == message_id:
-            p["active"] = not p.get("active", True)
+            p["active"] = not p["active"]
             _save(data)
             return p["active"]
     return None
@@ -68,9 +64,8 @@ def mark_sent_once(message_id: int):
     return False
 
 
-def is_sent_once(message_id: int) -> bool:
-    data = _load()
-    for p in data:
+def is_sent_once(message_id: int):
+    for p in _load():
         if p["message_id"] == message_id:
             return p.get("sent_once", False)
     return False

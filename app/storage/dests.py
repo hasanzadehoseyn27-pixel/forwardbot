@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-BASE = Path("/data")
+BASE = Path("/storage")
 BASE.mkdir(parents=True, exist_ok=True)
 
 DATA = BASE / "fwd_dests.json"
@@ -25,16 +25,10 @@ def _save(data):
 
 def add_destination(chat_id: int, title: str = "") -> bool:
     data = _load()
-
     for d in data:
         if d["chat_id"] == chat_id:
             return False
-
-    data.append({
-        "chat_id": chat_id,
-        "title": title or "گروه"
-    })
-
+    data.append({"chat_id": chat_id, "title": title or "گروه"})
     _save(data)
     return True
 
@@ -42,10 +36,8 @@ def add_destination(chat_id: int, title: str = "") -> bool:
 def remove_destination(chat_id: int) -> bool:
     data = _load()
     new = [d for d in data if d["chat_id"] != chat_id]
-
     if len(new) == len(data):
         return False
-
     _save(new)
     return True
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-SETTINGS_FILE = Path("/data/fwd_settings.json")
+SETTINGS_FILE = Path("/storage/fwd_settings.json")
 
 
 def _load():
@@ -10,11 +10,7 @@ def _load():
             return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
         except:
             pass
-
-    default = {
-        "send_mode": "repeat",
-        "interval": 1800
-    }
+    default = {"send_mode": "repeat", "interval": 1800}
     _save(default)
     return default
 
@@ -42,5 +38,5 @@ def get_interval():
 
 def set_interval_value(seconds: int):
     data = _load()
-    data["interval"] = int(seconds)
+    data["interval"] = seconds
     _save(data)
