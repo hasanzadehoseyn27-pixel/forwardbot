@@ -7,7 +7,7 @@ from app.storage.dests import add_destination, remove_destination, list_destinat
 from app.storage.posts import (
     list_all_posts,
     list_inactive_posts,
-    toggle_post,
+    toggle_post
 )
 from app.handlers.scheduler import (
     set_interval,
@@ -18,13 +18,11 @@ router = Router()
 
 
 # -------------------- تشخیص ادمین -------------------- #
-
 def is_admin(uid: int) -> bool:
     return uid == SETTINGS.OWNER_ID or uid in SETTINGS.ADMIN_IDS
 
 
 # -------------------- کیبوردها -------------------- #
-
 def admin_keyboard():
     return types.ReplyKeyboardMarkup(
         keyboard=[
@@ -65,7 +63,6 @@ DEL_DEST_WAIT = set()
 
 
 # -------------------- /admin -------------------- #
-
 @router.message(Command("admin"))
 async def admin_start(message: types.Message):
     if not is_admin(message.from_user.id):
@@ -74,7 +71,6 @@ async def admin_start(message: types.Message):
 
 
 # -------------------- مدیریت مقصدها -------------------- #
-
 def extract_chat(text: str):
     text = text.strip()
 
@@ -103,7 +99,6 @@ async def menu_dest(message: types.Message):
 
 
 # -------------------- افزودن مقصد -------------------- #
-
 @router.message(F.text.contains("افزودن مقصد"))
 async def ask_add_dest(message: types.Message):
     ADD_DEST_WAIT.add(message.from_user.id)
@@ -162,7 +157,6 @@ async def handle_add_dest(message: types.Message):
 
 
 # -------------------- حذف مقصد -------------------- #
-
 @router.message(F.text.contains("حذف مقصد"))
 async def ask_delete(message: types.Message):
     DEL_DEST_WAIT.add(message.from_user.id)
@@ -191,7 +185,6 @@ async def del_dest(message: types.Message):
 
 
 # -------------------- لیست مقصدها -------------------- #
-
 @router.message(F.text.contains("لیست مقصد"))
 async def list_dest(message: types.Message):
     dests = list_destinations()
@@ -212,8 +205,7 @@ async def list_dest(message: types.Message):
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
 
 
-# -------------------- نمایش همه پست‌ها + دکمه روشن/خاموش -------------------- #
-
+# -------------------- نمایش همه پست‌ها -------------------- #
 @router.message(F.text.contains("پست‌ها"))
 async def all_posts(message: types.Message):
 
@@ -227,23 +219,34 @@ async def all_posts(message: types.Message):
         msg_id = p["message_id"]
         active = p.get("active", True)
 
-        # شماره آگهی
-        ad_no = msg_id
+        # گرفتن شماره آگهی واقعی با Forward Trick
+        try:
+            fwd = await message.bot.forward_message(
+                chat_id=message.chat.id,
+                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
+                message_id=msg_id
+            )
+            caption = fwd.caption or fwd.text or ""
+            await fwd.delete()
+        except:
+            caption = ""
+
+        # پیدا کردن شماره آگهی
+        m = re.search(r"آگهی شماره\s*#(\d+)", caption)
+        ad_no = m.group(1) if m else msg_id
+
         bell = "🔔" if active else "🔕"
 
         text = (
-            f"{bell} <b>آگهی شماره #{ad_no}</b>\n"
-            f"<a href=\"https://t.me/c/{internal_id}/{msg_id}\">مشاهده پست</a>"
+            f'<a href="https://t.me/c/{internal_id}/{msg_id}">{bell} آگهی شماره #{ad_no}</a>'
         )
 
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[[
-
                 types.InlineKeyboardButton(
                     text="❌ خاموش" if active else "✅ روشن",
                     callback_data=f"toggle:{msg_id}"
                 )
-
             ]]
         )
 
@@ -251,7 +254,6 @@ async def all_posts(message: types.Message):
 
 
 # -------------------- لیست پست‌های خاموش -------------------- #
-
 @router.message(F.text.contains("پست‌های خاموش"))
 async def inactive_posts(message: types.Message):
 
@@ -264,19 +266,32 @@ async def inactive_posts(message: types.Message):
     for p in posts:
         msg_id = p["message_id"]
 
+        # forward trick برای گرفتن شماره آگهی
+        try:
+            fwd = await message.bot.forward_message(
+                chat_id=message.chat.id,
+                from_chat_id=SETTINGS.SOURCE_CHANNEL_ID,
+                message_id=msg_id
+            )
+            caption = fwd.caption or fwd.text or ""
+            await fwd.delete()
+        except:
+            caption = ""
+
+        # شماره آگهی
+        m = re.search(r"آگهی شماره\s*#(\d+)", caption)
+        ad_no = m.group(1) if m else msg_id
+
         text = (
-            f"🔕 <b>آگهی #{msg_id}</b>\n"
-            f"<a href=\"https://t.me/c/{internal_id}/{msg_id}\">مشاهده پست</a>"
+            f'<a href="https://t.me/c/{internal_id}/{msg_id}">🔕 آگهی شماره #{ad_no}</a>'
         )
 
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[[
-
                 types.InlineKeyboardButton(
                     text="✅ روشن کردن",
                     callback_data=f"toggle:{msg_id}"
                 )
-
             ]]
         )
 
@@ -284,7 +299,6 @@ async def inactive_posts(message: types.Message):
 
 
 # -------------------- Callback روشن/خاموش -------------------- #
-
 @router.callback_query(F.data.startswith("toggle:"))
 async def toggle_handler(query: types.CallbackQuery):
     msg_id = int(query.data.split(":")[1])
@@ -295,12 +309,10 @@ async def toggle_handler(query: types.CallbackQuery):
 
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[[
-
             types.InlineKeyboardButton(
                 text="❌ خاموش" if new_state else "✅ روشن",
                 callback_data=f"toggle:{msg_id}"
             )
-
         ]]
     )
 
@@ -308,54 +320,81 @@ async def toggle_handler(query: types.CallbackQuery):
     await query.message.edit_reply_markup(reply_markup=kb)
 
 
-# -------------------- تنظیم فاصله (بر حسب ثانیه/دقیقه/ساعت) -------------------- #
+# -------------------- تنظیم فاصله (ثانیه/دقیقه/ساعت) -------------------- #
+@router.message(F.text.contains("تنظیم فاصله"))
+async def interval_menu(message: types.Message):
 
-@router.message(F.text.contains("فاصله"))
-async def ask_interval(message: types.Message):
-    return await message.answer(
-        "⏱ فاصله ارسال را تعیین کنید:\n\n"
-        "مثال‌ها:\n"
-        "<code>20s</code> → ۲۰ ثانیه\n"
-        "<code>45</code> → ۴۵ ثانیه\n"
-        "<code>3m</code> → ۳ دقیقه\n"
-        "<code>1h</code> → ۱ ساعت\n",
-        parse_mode="HTML"
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="⏱ ثانیه‌ای", callback_data="iv:sec"),
+                types.InlineKeyboardButton(text="🕰 دقیقه‌ای", callback_data="iv:min"),
+                types.InlineKeyboardButton(text="⏳ ساعتی", callback_data="iv:hour"),
+            ],
+            [
+                types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="iv:back")
+            ]
+        ]
     )
 
+    await message.answer("واحد زمانی را انتخاب کنید:", reply_markup=kb)
 
-@router.message(F.text.regexp(r"^\d+[smh]?$"))
-async def set_int(message: types.Message):
-    raw = message.text.lower()
 
-    if raw.endswith("s"):
-        sec = int(raw[:-1])
-    elif raw.endswith("m"):
-        sec = int(raw[:-1]) * 60
-    elif raw.endswith("h"):
-        sec = int(raw[:-1]) * 3600
-    elif raw.isdigit():
-        sec = int(raw)
+@router.callback_query(F.data.startswith("iv:"))
+async def interval_unit(query: types.CallbackQuery):
+
+    unit = query.data.split(":")[1]
+
+    if unit == "back":
+        return await query.message.edit_text("🔧 تنظیمات", reply_markup=None)
+
+    txt = {
+        "sec": "⏱ لطفاً زمان را به ثانیه وارد کنید:",
+        "min": "🕰 لطفاً زمان را به دقیقه وارد کنید:",
+        "hour": "⏳ لطفاً زمان را به ساعت وارد کنید:",
+    }[unit]
+
+    await query.message.answer(txt)
+
+    query.message.bot["interval_unit"] = unit  # ذخیره نوع واحد
+
+
+@router.message(F.text.regexp(r"^\d+$"))
+async def interval_value(message: types.Message):
+
+    unit = message.bot.get("interval_unit", None)
+    if not unit:
+        return  # ربطی ندارد
+
+    value = int(message.text)
+
+    if unit == "sec":
+        sec = value
+        label = f"{value} ثانیه"
+    elif unit == "min":
+        sec = value * 60
+        label = f"{value} دقیقه"
     else:
-        return await message.answer("❗ ورودی معتبر نیست.")
+        sec = value * 3600
+        label = f"{value} ساعت"
 
     await set_interval(sec)
 
-    return await message.answer(
-        f"⏱ فاصله روی <code>{sec}</code> ثانیه تنظیم شد.",
-        parse_mode="HTML",
-        reply_markup=admin_keyboard()
-    )
+    await message.answer(f"✔ زمان تکرار شما هر {label} ثبت شد.", reply_markup=admin_keyboard())
 
 
-# -------------------- Toggle حالت ارسال -------------------- #
-
+# -------------------- حالت ارسال (دائمی / یکبار) -------------------- #
 @router.message(F.text.contains("حالت ارسال"))
 async def send_mode_menu(message: types.Message):
+
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 types.InlineKeyboardButton(text="🔁 ارسال دائمی", callback_data="mode:always"),
                 types.InlineKeyboardButton(text="1️⃣ ارسال یکبار", callback_data="mode:once"),
+            ],
+            [
+                types.InlineKeyboardButton(text="🔙 بازگشت", callback_data="mode:back")
             ]
         ]
     )
@@ -367,18 +406,21 @@ async def send_mode_menu(message: types.Message):
 async def change_mode(query: types.CallbackQuery):
     mode = query.data.split(":")[1]
 
+    if mode == "back":
+        return await query.message.edit_text("🔧 تنظیمات", reply_markup=None)
+
     if mode == "always":
         await set_send_mode(False)
-        await query.answer("🔁 ارسال دائمی فعال شد.")
+        await query.answer("🔁 ارسال دائمی فعال شد ✔")
+
     else:
         await set_send_mode(True)
-        await query.answer("1️⃣ ارسال یکبار فعال شد.")
+        await query.answer("1️⃣ ارسال یکبار فعال شد ✔")
 
-    await query.message.edit_reply_markup(reply_markup=None)
+    await query.message.delete()
 
 
 # -------------------- بازگشت -------------------- #
-
 @router.message(F.text.contains("بازگشت"))
 async def back_main(message: types.Message):
     return await message.answer("بازگشت به پنل مدیریت", reply_markup=admin_keyboard())
