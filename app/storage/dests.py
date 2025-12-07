@@ -63,3 +63,4 @@ def remove_destination(chat_id: int) -> bool:
 
 def list_destinations():
     return _load()
+# ششششش
