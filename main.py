@@ -5,7 +5,7 @@ from aiohttp import web
 from aiogram import Router, types
 from aiogram.filters import CommandStart
 
-from app.config import build_bot_and_dispatcher
+from app.config import build_bot_and_dispatcher, SETTINGS
 from app.handlers.source import router as source_router
 from app.handlers.admin_panel import (
     router as admin_router,
@@ -16,14 +16,8 @@ from app.handlers.scheduler import start_scheduler
 
 
 async def main():
-    # ---- گرفتن bot و dp از تابع کانفیگ ---- #
-    result = build_bot_and_dispatcher()
-
-    # اگر چند مقدار برگرداند، فقط دو تای اول را می‌گیریم
-    if isinstance(result, tuple):
-        bot, dp = result[0], result[1]
-    else:
-        bot, dp = result
+    # ---- ساخت Bot و Dispatcher ---- #
+    bot, dp, _settings = build_bot_and_dispatcher()
 
     # ---- هندلر /start ---- #
     start_router = Router()
@@ -32,21 +26,22 @@ async def main():
     async def cmd_start(message: types.Message):
         if is_admin(message.from_user.id):
             await message.answer(
-                "سلام 👋\nپنل مدیریت ربات:",
+                "سلام 👋\nبه پنل مدیریت خوش آمدید:",
                 reply_markup=admin_keyboard(),
             )
         else:
-            await message.answer("⛔ این ربات مخصوص مدیر است.")
+            await message.answer("⛔ این ربات فقط مخصوص مدیران است.")
 
-    # ثبت روترها
+    # ---- ثبت روترها ---- #
     dp.include_router(start_router)
     dp.include_router(source_router)
     dp.include_router(admin_router)
 
-    # شروع Scheduler در پس‌زمینه
+    # ---- Scheduler در پس‌زمینه ---- #
     asyncio.create_task(start_scheduler(bot))
+    print("[MAIN] Scheduler started in background.")
 
-    # ------ وب‌سرور ساده برای healthcheck ------ #
+    # ---- وب‌سرور healthcheck ---- #
     async def healthcheck(_):
         return web.Response(text="Bot is running!")
 
@@ -58,10 +53,14 @@ async def main():
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
 
-    print(f"HTTP server started on 0.0.0.0:{port}")
+    print(f"[MAIN] HTTP healthcheck server running on port {port}")
 
-    # شروع polling ربات
-    await dp.start_polling(bot)
+    # ---- استارت Polling ---- #
+    try:
+        print("[MAIN] Starting bot polling...")
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f"[MAIN] Polling crashed: {e}")
 
 
 if __name__ == "__main__":
