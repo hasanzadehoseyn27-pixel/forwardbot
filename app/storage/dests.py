@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-# مسیر امن و قابل نوشتن در لیارا
-BASE = Path("/usr/src/app/storage")
+# مسیر قابل نوشتن در لیارا
+BASE = Path("/var/www/data")
 BASE.mkdir(parents=True, exist_ok=True)
 
 DATA = BASE / "fwd_dests.json"

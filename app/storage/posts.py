@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from datetime import date
 
-BASE = Path("/usr/src/app/storage")
+BASE = Path("/var/www/data")
 BASE.mkdir(parents=True, exist_ok=True)
 
 DATA = BASE / "fwd_posts.json"
