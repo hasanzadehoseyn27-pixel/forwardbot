@@ -8,6 +8,9 @@ DATA = Path("/tmp/fwd_posts.json")
 # ---------------------- ابزارهای داخلی ---------------------- #
 
 def _load():
+    """
+    خواندن کل لیست پست‌ها از فایل JSON.
+    """
     if DATA.exists():
         try:
             return json.loads(DATA.read_text(encoding="utf-8"))
@@ -17,6 +20,9 @@ def _load():
 
 
 def _save(data):
+    """
+    ذخیره لیست پست‌ها در فایل JSON.
+    """
     try:
         DATA.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except:
@@ -26,34 +32,64 @@ def _save(data):
 # ---------------------- افزودن پست جدید ---------------------- #
 
 def add_post(message_id: int, msg_date: str):
+    """
+    افزودن پست جدید.
+    حالا دیگر محدود به امروز نیست؛ فقط message_id یکتا باشد.
+    """
     data = _load()
 
+    # جلوگیری از ثبت پست تکراری
     for p in data:
-        if p["message_id"] == message_id and p["date"] == msg_date:
+        if p["message_id"] == message_id:
             return
 
     data.append(
         {
             "message_id": message_id,
             "date": msg_date,
-            "active": True,
+            "active": True,   # روشن یا خاموش بودن پست
+            "sent": False,    # حالت ارسال یک‌بار
         }
     )
 
     _save(data)
 
 
-# ---------------------- پست‌های امروز ---------------------- #
+# ---------------------- لیست همه پست‌ها ---------------------- #
 
-def list_today_posts():
-    today = date.today().isoformat()
+def list_all_posts():
+    """
+    برگرداندن تمام پست‌های ذخیره‌شده
+    """
+    return _load()
+
+
+# ---------------------- لیست پست‌های خاموش شده ---------------------- #
+
+def list_inactive_posts():
+    """
+    لیست پست‌هایی که active=False هستند.
+    """
     data = _load()
-    return [p for p in data if p["date"] == today]
+    return [p for p in data if not p.get("active", True)]
 
 
-# ---------------------- فعال/غیرفعال کردن پست ---------------------- #
+# ---------------------- پست‌های فعال ---------------------- #
+
+def list_active_posts():
+    """
+    پست‌هایی که active=True هستند.
+    """
+    data = _load()
+    return [p for p in data if p.get("active", True)]
+
+
+# ---------------------- تغییر وضعیت فعال/غیرفعال پست ---------------------- #
 
 def toggle_post(message_id: int):
+    """
+    فعال یا غیرفعال کردن پست.
+    """
     data = _load()
 
     for p in data:
@@ -63,3 +99,30 @@ def toggle_post(message_id: int):
             return p["active"]
 
     return None
+
+
+# ---------------------- تغییر وضعیت sent برای حالت ارسال یک‌بار ---------------------- #
+
+def toggle_sent(message_id: int):
+    """
+    تغییر sent (برای حالت ارسال فقط یکبار)
+    """
+    data = _load()
+
+    for p in data:
+        if p["message_id"] == message_id:
+            p["sent"] = not p.get("sent", False)
+            _save(data)
+            return p["sent"]
+
+    return None
+
+
+# ---------------------- پست‌هایی که هنوز ارسال نشده‌اند ---------------------- #
+
+def list_unsent_posts():
+    """
+    لیست پست‌هایی که در حالت ارسال یک‌بار، هنوز ارسال نشده‌اند.
+    """
+    data = _load()
+    return [p for p in data if not p.get("sent", False)]

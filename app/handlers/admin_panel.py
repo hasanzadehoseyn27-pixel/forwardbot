@@ -4,8 +4,15 @@ import re
 
 from app.config import SETTINGS
 from app.storage.dests import add_destination, remove_destination, list_destinations
-from app.storage.posts import list_today_posts, toggle_post
-from app.handlers.scheduler import set_interval
+from app.storage.posts import (
+    list_all_posts,
+    list_inactive_posts,
+    toggle_post,
+)
+from app.handlers.scheduler import (
+    set_interval,
+    set_send_mode
+)
 
 router = Router()
 
@@ -23,10 +30,14 @@ def admin_keyboard():
         keyboard=[
             [
                 types.KeyboardButton(text="📍 مدیریت مقصدها"),
-                types.KeyboardButton(text="📋 پست‌های امروز"),
+                types.KeyboardButton(text="📋 پست‌ها"),
             ],
             [
+                types.KeyboardButton(text="🌓 پست‌های خاموش"),
                 types.KeyboardButton(text="⏱ تنظیم فاصله"),
+            ],
+            [
+                types.KeyboardButton(text="🔁 حالت ارسال"),
             ]
         ],
         resize_keyboard=True
@@ -201,14 +212,14 @@ async def list_dest(message: types.Message):
     return await message.answer(txt, parse_mode="HTML", reply_markup=dests_keyboard())
 
 
-# -------------------- پست‌های امروز + دکمه روشن/خاموش -------------------- #
+# -------------------- نمایش همه پست‌ها + دکمه روشن/خاموش -------------------- #
 
-@router.message(F.text.contains("پست‌های امروز"))
-async def today(message: types.Message):
+@router.message(F.text.contains("پست‌ها"))
+async def all_posts(message: types.Message):
 
-    posts = list_today_posts()
+    posts = list_all_posts()
     if not posts:
-        return await message.answer("📭 امروز هیچ پستی یافت نشد.", reply_markup=admin_keyboard())
+        return await message.answer("📭 هیچ پستی وجود ندارد.", reply_markup=admin_keyboard())
 
     internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
 
@@ -216,20 +227,56 @@ async def today(message: types.Message):
         msg_id = p["message_id"]
         active = p.get("active", True)
 
+        # شماره آگهی
+        ad_no = msg_id
         bell = "🔔" if active else "🔕"
-        link = f"https://t.me/c/{internal_id}/{msg_id}"
 
         text = (
-            f"{bell} <b>آگهی شماره {msg_id}</b>\n"
-            f"<a href=\"{link}\">مشاهده پست در کانال</a>"
+            f"{bell} <b>آگهی شماره #{ad_no}</b>\n"
+            f"<a href=\"https://t.me/c/{internal_id}/{msg_id}\">مشاهده پست</a>"
         )
 
         kb = types.InlineKeyboardMarkup(
             inline_keyboard=[[
+
                 types.InlineKeyboardButton(
-                    text="❌ خاموش کردن" if active else "✅ روشن کردن",
+                    text="❌ خاموش" if active else "✅ روشن",
                     callback_data=f"toggle:{msg_id}"
                 )
+
+            ]]
+        )
+
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+# -------------------- لیست پست‌های خاموش -------------------- #
+
+@router.message(F.text.contains("پست‌های خاموش"))
+async def inactive_posts(message: types.Message):
+
+    posts = list_inactive_posts()
+    if not posts:
+        return await message.answer("🌓 پست خاموش وجود ندارد.", reply_markup=admin_keyboard())
+
+    internal_id = str(SETTINGS.SOURCE_CHANNEL_ID).replace("-100", "")
+
+    for p in posts:
+        msg_id = p["message_id"]
+
+        text = (
+            f"🔕 <b>آگهی #{msg_id}</b>\n"
+            f"<a href=\"https://t.me/c/{internal_id}/{msg_id}\">مشاهده پست</a>"
+        )
+
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[[
+
+                types.InlineKeyboardButton(
+                    text="✅ روشن کردن",
+                    callback_data=f"toggle:{msg_id}"
+                )
+
             ]]
         )
 
@@ -248,40 +295,48 @@ async def toggle_handler(query: types.CallbackQuery):
 
     kb = types.InlineKeyboardMarkup(
         inline_keyboard=[[
+
             types.InlineKeyboardButton(
-                text="❌ خاموش کردن" if new_state else "✅ روشن کردن",
+                text="❌ خاموش" if new_state else "✅ روشن",
                 callback_data=f"toggle:{msg_id}"
             )
+
         ]]
     )
 
-    await query.answer("وضعیت تغییر کرد.")
+    await query.answer("✔ تغییر انجام شد.")
     await query.message.edit_reply_markup(reply_markup=kb)
 
 
-# -------------------- تنظیم فاصله -------------------- #
+# -------------------- تنظیم فاصله (بر حسب ثانیه/دقیقه/ساعت) -------------------- #
 
 @router.message(F.text.contains("فاصله"))
 async def ask_interval(message: types.Message):
     return await message.answer(
-        "⏱ مقدار فاصله را ارسال کنید:\n"
-        "<code>5m</code>\n"
-        "<code>2h</code>\n"
-        "<code>10</code>",
+        "⏱ فاصله ارسال را تعیین کنید:\n\n"
+        "مثال‌ها:\n"
+        "<code>20s</code> → ۲۰ ثانیه\n"
+        "<code>45</code> → ۴۵ ثانیه\n"
+        "<code>3m</code> → ۳ دقیقه\n"
+        "<code>1h</code> → ۱ ساعت\n",
         parse_mode="HTML"
     )
 
 
-@router.message(F.text.regexp(r"^\d+[mh]?$"))
+@router.message(F.text.regexp(r"^\d+[smh]?$"))
 async def set_int(message: types.Message):
     raw = message.text.lower()
 
-    if raw.isdigit():
-        sec = int(raw) * 60
+    if raw.endswith("s"):
+        sec = int(raw[:-1])
     elif raw.endswith("m"):
         sec = int(raw[:-1]) * 60
     elif raw.endswith("h"):
         sec = int(raw[:-1]) * 3600
+    elif raw.isdigit():
+        sec = int(raw)
+    else:
+        return await message.answer("❗ ورودی معتبر نیست.")
 
     await set_interval(sec)
 
@@ -290,6 +345,36 @@ async def set_int(message: types.Message):
         parse_mode="HTML",
         reply_markup=admin_keyboard()
     )
+
+
+# -------------------- Toggle حالت ارسال -------------------- #
+
+@router.message(F.text.contains("حالت ارسال"))
+async def send_mode_menu(message: types.Message):
+    kb = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="🔁 ارسال دائمی", callback_data="mode:always"),
+                types.InlineKeyboardButton(text="1️⃣ ارسال یکبار", callback_data="mode:once"),
+            ]
+        ]
+    )
+
+    await message.answer("حالت ارسال را انتخاب کنید:", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("mode:"))
+async def change_mode(query: types.CallbackQuery):
+    mode = query.data.split(":")[1]
+
+    if mode == "always":
+        await set_send_mode(False)
+        await query.answer("🔁 ارسال دائمی فعال شد.")
+    else:
+        await set_send_mode(True)
+        await query.answer("1️⃣ ارسال یکبار فعال شد.")
+
+    await query.message.edit_reply_markup(reply_markup=None)
 
 
 # -------------------- بازگشت -------------------- #
